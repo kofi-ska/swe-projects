@@ -1,0 +1,32 @@
+{
+  "specId": "normal-hello",
+  "specVersion": 1,
+  "schemaVersion": 1,
+  "initialState": "NEW",
+  "terminalStates": ["DONE"],
+  "states": ["NEW", "DONE"],
+  "permissions": {
+    "effectTypesAllowlist": ["log"]
+  },
+  "limits": {
+    "maxEffectsPerDecision": 5,
+    "maxNextInputsPerDecision": 5,
+    "maxContextBytes": 20000,
+    "maxPayloadBytes": 20000,
+    "maxGuardOps": 50
+  },
+  "transitions": [
+    {
+      "from": "NEW",
+      "on": "START",
+      "to": "DONE",
+      "effects": [
+        {
+          "type": "log",
+          "params": { "msg": "completed" }
+        }
+      ]
+    }
+  ]
+}
+

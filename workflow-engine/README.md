@@ -1,0 +1,204 @@
+- Problem
+  - Build a headless workflow engine that is safe to run "live" even when the spec, inputs, and effect targets are adversarial or misconfigured.
+  - The engine must assume:
+    - Inputs can be duplicated, out-of-order, delayed, malformed, or intentionally hostile.
+    - Specs can be written by well-meaning humans but also by attackers (or compromised accounts) trying to exfiltrate data, escalate privilege, or DoS the system.
+    - Effects are the blast radius: they can hit networks, money, user data, and internal services.
+
+- FR
+  - Safe spec ingestion and lifecycle
+    - Create, validate, version, and publish specs with explicit approvals.
+    - Pin workflow instances to a spec version; upgrades must be explicit.
+    - Provide diffable, auditable spec changes and rollbacks.
+  - Safe execution
+    - Apply a single input to a single workflow instance deterministically.
+    - Produce effects as data; executing effects is explicitly policy-governed.
+    - Allow policy to deny, rewrite, rate-limit, or sandbox effects.
+  - Guarded control flow
+    - Guards must be safe to evaluate (bounded time/space) and non-Turing-complete by default.
+    - Define rejection behavior: ignore, reject, or dead-letter with reason codes.
+  - Adversarial simulation
+    - CLI mode to fuzz inputs/specs and produce worst-case traces (max effects, cycles, timeouts).
+    - "Explain" mode for why a transition fired or was rejected.
+  - Incident tools
+    - Pause/resume workflow instances.
+    - Quarantine inputs and effects.
+    - Reprocess from history with strict controls.
+
+- NFR
+  - Qualities
+    - Security-first correctness
+      - Spec is untrusted. Input is untrusted. Effect execution is dangerous by default.
+      - Engine must make it hard to create workflows that:
+        - loop infinitely
+        - fan out uncontrolled
+        - call arbitrary endpoints
+        - leak secrets via logs/effects
+    - Determinism and boundedness
+      - Decision step must have strict CPU/time/memory bounds.
+      - No unbounded recursion or synchronous re-entrancy.
+    - Observability with integrity
+      - Audit logs must be tamper-evident and complete enough to reconstruct decisions.
+      - Log redaction must be enforced (no secrets).
+  - Constraints
+    - No `eval`, no dynamic code loading, no user-defined JS in guards/effects.
+    - Guard language must be constrained:
+      - bounded operations
+      - bounded data access paths
+      - explicit type checks
+    - Effects must go through an allowlisted registry with per-effect policy.
+    - Storage adapter must support optimistic concurrency and append-only history (or equivalent).
+  - Scale (adversarial worst-case)
+    - Resistant to DoS patterns:
+      - high-cardinality workflowIds
+      - eventId floods
+      - payload bloat / nested JSON bombs
+      - fan-out storms (effects generating more inputs)
+      - timer storms (millions of scheduled timeouts)
+    - Backpressure and shedding:
+      - bounded queues
+      - per-tenant and per-workflow limits
+      - global concurrency caps for effect execution
+
+- Core Entities
+  - `Spec`
+    - `specId`, `specVersion`, `schemaVersion`
+    - `permissions` (critical): what effect types and targets are allowed
+    - `limits`: max effects/transition, max context size, max timers, max retries
+    - `signature/attestation` (optional but recommended): who approved this spec/version
+  - `Instance`
+    - `workflowId`, `specId`, `specVersion`
+    - `state`, `context`, `version`
+    - `status`: RUNNING | PAUSED | QUARANTINED | FAILED
+  - `InputEnvelope`
+    - `eventId`, `workflowId`, `type`, `occurredAt`, `schemaVersion`
+    - `actor` / `principal` (who caused it) and `tenantId` if multi-tenant
+    - `payload` (size-limited)
+    - `integrity`: optional signature/HMAC for authenticity
+  - `Decision`
+    - `transitionTaken` (from/to/on)
+    - `effects[]` (data only)
+    - `nextInputs[]` (data only)
+    - `rejection` (structured reason)
+  - `Effect`
+    - `effectId`, `type`, `params`, `idempotencyKey`
+    - `policyContext`: tenant, principal, specVersion, instance state
+  - Stores/Ports
+    - `WorkflowStore` (must support)
+      - atomic load/save with expected version
+      - append-only history stream (or immutable event log)
+    - `IdempotencyStore`
+      - atomic check-and-mark with TTL controls (prevent unbounded growth)
+    - `EffectExecutor`
+      - policy evaluation + sandboxed execution + timeouts
+    - `QuotaLimiter`
+      - per-tenant, per-spec, per-workflow rate/volume limits
+    - `Scheduler`
+      - durable timers with dedupe and quotas
+
+- Structure
+  - API
+    - Spec APIs (must exist even in CLI-only)
+      - `validateSpec(spec) -> errors/warnings + computed risk score`
+      - `lintSpec(spec) -> dangerous patterns` (loops, fan-out, unbounded timers)
+      - `publishSpec(spec) -> specVersion` (optional now, but design for it)
+    - Engine APIs
+      - `decide(spec, instance, input) -> Decision` (pure, bounded)
+    - Runtime APIs
+      - `handle(input) -> outcome` (idempotency, concurrency, persistence)
+      - `pause(workflowId)`, `resume(workflowId)`, `quarantine(workflowId)`
+    - CLI
+      - `wf validate`, `wf lint`, `wf simulate`, `wf run`, `wf inspect`, `wf explain`, `wf fuzz`
+  - Data Flow
+    - Threat-aware ingress
+      - parse with size caps and depth caps
+      - schema validate
+      - authenticate/authorize principal (even if local CLI, model it)
+      - rate-limit
+    - Execution
+      - lock per `workflowId`
+      - idempotency check (bounded store)
+      - decide with compute budget
+      - persist state + append history atomically
+      - enqueue effects to executor queue (never run inline)
+    - Effect execution
+      - policy check (allowlist + target constraints)
+      - execute with timeout + retries + circuit breakers
+      - record effect outcome (append-only)
+      - emit effect-result input (goes back through ingress validation)
+
+- Design -> Satisfy FR
+  - High Level
+    - "Secure by default" runtime:
+      - All effect execution disabled unless explicitly enabled by policy.
+      - Specs carry permissions/limits, but platform policy can further restrict.
+      - Every transition and effect is audited.
+    - Separation of concerns:
+      - Core decides; runtime enforces; executor performs.
+  - Low Level
+    - Spec validation must include adversarial checks
+      - No unreachable states
+      - No ambiguous transitions
+      - No cycles without explicit rate limits and escape hatches
+      - Guard complexity limits (AST node count)
+      - Effect count limits per transition
+      - Timer quotas and minimum delay thresholds
+    - Guard evaluation engine
+      - structured predicates only (no string eval)
+      - constant-time-ish operators where possible
+      - denylist expensive operations (regex backtracking, deep comparisons)
+    - Context management
+      - max context size
+      - explicit allowlist of fields that can be stored
+      - redact-on-write for secrets
+    - Idempotency strategy
+      - eventId uniqueness scoped by tenant/workflowId
+      - TTL + bounded storage to prevent attacker filling the dedupe store forever
+    - Concurrency strategy
+      - per-workflow single-flight
+      - global worker pool caps
+      - fairness to prevent one workflow/tenant starving others
+
+- Deep Dives => Satisfy NFR
+  - Adversarial spec patterns
+    - Infinite loop transitions: `A --(X)-> A` with effects attached
+    - Fan-out bombs: one input emits 100 effects and 100 follow-up inputs
+    - Timer storms: state entry schedules repeated timers without dedupe
+    - Data exfiltration: effects that send context/payload to external URLs
+    - Privilege escalation: spec uses "admin" effect types without approval
+    - Mitigations:
+      - static linting + required approvals for high-risk constructs
+      - runtime quotas + kill switches
+      - effect target allowlists (hostnames, topics)
+  - Input attacks
+    - Replay floods (same eventId, or unique eventIds to fill stores)
+    - Oversized payloads / deeply nested JSON to burn CPU/memory
+    - Type confusion to bypass guards
+    - Event ordering manipulation
+    - Mitigations:
+      - size/depth caps
+      - dedupe with TTL + quotas
+      - strict schema version handling
+      - reject/park out-of-window timestamps if relevant
+  - Effect execution attacks
+    - SSRF via HTTP effects
+    - Credential leakage in headers/logs
+    - Hanging calls to exhaust workers
+    - Side-effect duplication due to retries
+    - Mitigations:
+      - deny private IP ranges / metadata endpoints
+      - secret redaction + secret references (never inline secrets in spec)
+      - hard timeouts, circuit breakers
+      - mandatory idempotency keys and dedupe on effect executor side
+  - Multi-tenancy (if "anyone can use it" implies shared platform)
+    - Tenant isolation in storage keys, quotas, and execution pools
+    - Per-tenant encryption at rest (optional)
+    - Per-tenant audit trails and access controls
+  - Auditability and tamper resistance
+    - Append-only history with hashes (hash chain) to detect tampering
+    - Deterministic decision replay: ability to reproduce a decision from history + spec version
+  - Safe defaults and "escape hatches"
+    - Default behavior on unknown input: reject + quarantine, not ignore silently
+    - Default behavior on validation failure: fail closed
+    - Manual intervention states for irreconcilable failures
+

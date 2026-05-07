@@ -1,0 +1,67 @@
+{
+  "specId": "tricky-approval",
+  "specVersion": 1,
+  "schemaVersion": 1,
+  "initialState": "DRAFT",
+  "terminalStates": ["APPROVED", "REJECTED", "EXPIRED"],
+  "states": ["DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "EXPIRED"],
+  "permissions": {
+    "effectTypesAllowlist": ["log"]
+  },
+  "limits": {
+    "maxEffectsPerDecision": 10,
+    "maxNextInputsPerDecision": 10,
+    "maxContextBytes": 20000,
+    "maxPayloadBytes": 20000,
+    "maxGuardOps": 100
+  },
+  "transitions": [
+    {
+      "from": "DRAFT",
+      "on": "SUBMIT",
+      "to": "SUBMITTED",
+      "contextPatch": {
+        "set": {
+          "context.submittedAt": "2026-01-01T00:00:00.000Z"
+        }
+      },
+      "effects": [
+        { "type": "log", "params": { "msg": "submitted" } }
+      ]
+    },
+    {
+      "from": "SUBMITTED",
+      "on": "APPROVE",
+      "to": "APPROVED",
+      "guard": {
+        "op": "and",
+        "args": [
+          { "op": "exists", "path": "payload.approver" },
+          { "op": "eq", "path": "payload.role", "value": "manager" }
+        ]
+      },
+      "effects": [
+        { "type": "log", "params": { "msg": "approved" } }
+      ]
+    },
+    {
+      "from": "SUBMITTED",
+      "on": "REJECT",
+      "to": "REJECTED",
+      "effects": [
+        { "type": "log", "params": { "msg": "rejected" } }
+      ]
+    }
+  ],
+  "timeouts": [
+    {
+      "inState": "SUBMITTED",
+      "afterMs": 30000,
+      "emit": {
+        "type": "EXPIRE",
+        "payload": { "reason": "timeout" }
+      }
+    }
+  ]
+}
+
