@@ -1,0 +1,14 @@
+{
+  "name": "@kofi-ska/workflow-engine",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test src/tests/index.test.ts",
+    "wf": "node --experimental-strip-types src/cli/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^5.9.2"
+  }
+}

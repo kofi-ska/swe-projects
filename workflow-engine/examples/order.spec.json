@@ -1,0 +1,87 @@
+{
+  "specId": "order-fulfillment",
+  "specVersion": 1,
+  "schemaVersion": 1,
+  "initialState": "INIT",
+  "terminalStates": ["FULFILLED", "CANCELLED", "FAILED_DELIVERY"],
+  "states": [
+    "INIT",
+    "PLACED",
+    "CONFIRMED",
+    "IN_TRANSIT",
+    "FILLED",
+    "FULFILLED",
+    "CANCELLED",
+    "FAILED_DELIVERY"
+  ],
+  "permissions": {
+    "effectTypesAllowlist": ["log"]
+  },
+  "limits": {
+    "maxEffectsPerDecision": 10,
+    "maxNextInputsPerDecision": 10,
+    "maxContextBytes": 20000,
+    "maxPayloadBytes": 20000,
+    "maxGuardOps": 100
+  },
+  "transitions": [
+    {
+      "from": "INIT",
+      "on": "PLACE_ORDER",
+      "to": "PLACED",
+      "contextPatch": {
+        "set": {
+          "context.orderId": "ORDER-001"
+        }
+      },
+      "effects": [{ "type": "log", "params": { "msg": "order placed" } }],
+      "nextInputs": [{ "type": "CONFIRM", "payload": {} }]
+    },
+    {
+      "from": "PLACED",
+      "on": "CONFIRM",
+      "to": "CONFIRMED",
+      "effects": [{ "type": "log", "params": { "msg": "order confirmed" } }],
+      "nextInputs": [{ "type": "SHIP", "payload": {}, "delayMs": 10 }]
+    },
+    {
+      "from": "CONFIRMED",
+      "on": "SHIP",
+      "to": "IN_TRANSIT",
+      "effects": [{ "type": "log", "params": { "msg": "order shipped" } }]
+    },
+    {
+      "from": "IN_TRANSIT",
+      "on": "FILL",
+      "to": "FILLED",
+      "effects": [{ "type": "log", "params": { "msg": "order filled" } }],
+      "nextInputs": [{ "type": "FULFILL", "payload": {} }]
+    },
+    {
+      "from": "FILLED",
+      "on": "FULFILL",
+      "to": "FULFILLED",
+      "effects": [{ "type": "log", "params": { "msg": "order fulfilled" } }]
+    },
+    {
+      "from": "PLACED",
+      "on": "CANCEL",
+      "to": "CANCELLED",
+      "effects": [{ "type": "log", "params": { "msg": "order cancelled" } }]
+    },
+    {
+      "from": "IN_TRANSIT",
+      "on": "FAIL_DELIVERY",
+      "to": "FAILED_DELIVERY",
+      "effects": [{ "type": "log", "params": { "msg": "delivery failed" } }]
+    }
+  ],
+  "timeouts": [
+    {
+      "inState": "IN_TRANSIT",
+      "afterMs": 60000,
+      "emit": { "type": "FAIL_DELIVERY", "payload": { "reason": "timeout" } }
+    }
+  ]
+}
+

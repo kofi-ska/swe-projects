@@ -1,0 +1,45 @@
+{
+  "specId": "adv-guard-bomb",
+  "specVersion": 1,
+  "schemaVersion": 1,
+  "initialState": "A",
+  "terminalStates": ["B"],
+  "states": ["A", "B"],
+  "permissions": {
+    "effectTypesAllowlist": []
+  },
+  "limits": {
+    "maxEffectsPerDecision": 5,
+    "maxNextInputsPerDecision": 5,
+    "maxContextBytes": 20000,
+    "maxPayloadBytes": 20000,
+    "maxGuardOps": 3
+  },
+  "transitions": [
+    {
+      "from": "A",
+      "on": "X",
+      "to": "B",
+      "guard": {
+        "op": "and",
+        "args": [
+          {
+            "op": "or",
+            "args": [
+              { "op": "exists", "path": "payload.a" },
+              { "op": "exists", "path": "payload.b" }
+            ]
+          },
+          {
+            "op": "or",
+            "args": [
+              { "op": "exists", "path": "payload.c" },
+              { "op": "exists", "path": "payload.d" }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
+

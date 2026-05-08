@@ -1,0 +1,46 @@
+{
+  "specId": "adv-selfloop-fanout",
+  "specVersion": 1,
+  "schemaVersion": 1,
+  "initialState": "HOT",
+  "terminalStates": ["DONE"],
+  "states": ["HOT", "DONE"],
+  "permissions": {
+    "effectTypesAllowlist": ["log", "http.request"]
+  },
+  "limits": {
+    "maxEffectsPerDecision": 50,
+    "maxNextInputsPerDecision": 50,
+    "maxContextBytes": 20000,
+    "maxPayloadBytes": 20000,
+    "maxGuardOps": 200
+  },
+  "transitions": [
+    {
+      "from": "HOT",
+      "on": "PING",
+      "to": "HOT",
+      "effects": [
+        { "type": "log", "params": { "msg": "loop-1" } },
+        { "type": "log", "params": { "msg": "loop-2" } },
+        { "type": "log", "params": { "msg": "loop-3" } },
+        { "type": "log", "params": { "msg": "loop-4" } },
+        { "type": "log", "params": { "msg": "loop-5" } }
+      ],
+      "nextInputs": [
+        { "type": "PING", "payload": {}, "delayMs": 1 },
+        { "type": "PING", "payload": {}, "delayMs": 1 },
+        { "type": "PING", "payload": {}, "delayMs": 1 }
+      ]
+    },
+    {
+      "from": "HOT",
+      "on": "STOP",
+      "to": "DONE",
+      "effects": [
+        { "type": "log", "params": { "msg": "stopped" } }
+      ]
+    }
+  ]
+}
+

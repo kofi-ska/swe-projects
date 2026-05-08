@@ -1,0 +1,3 @@
+{"eventId":"00000000-0000-0000-0000-000000000301","workflowId":"A-LOOP-1","type":"PING","occurredAt":"2026-01-01T00:00:00.000Z","schemaVersion":1,"payload":{}}
+{"eventId":"00000000-0000-0000-0000-000000000302","workflowId":"A-LOOP-1","type":"STOP","occurredAt":"2026-01-01T00:00:01.000Z","schemaVersion":1,"payload":{}}
+
