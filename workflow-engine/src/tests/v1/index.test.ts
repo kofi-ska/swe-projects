@@ -3,20 +3,20 @@ import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { validateSpec } from "../v1/core/validateSpec.ts";
-import { decide } from "../v1/core/decide.ts";
-import type { InputEnvelope } from "../v1/core/spec.ts";
-import { handle } from "../v1/runtime/engine.ts";
-import { FileWorkflowStore } from "../v1/adapters/store-file/storeFile.ts";
-import { FileIdempotencyStore } from "../v1/adapters/idempotency-file/idempotencyFile.ts";
-import { NoopEffectExecutor } from "../v1/adapters/effects/noopEffects.ts";
-import { AllowAllQuotaLimiter } from "../v1/adapters/quota/allowAllQuota.ts";
-import { ConsoleLogger } from "../v1/adapters/telemetry/consoleLogger.ts";
-import { NoopMetrics } from "../v1/adapters/telemetry/noopMetrics.ts";
-import { InMemorySequencer } from "../v1/runtime/inMemorySequencer.ts";
-import { FileScheduler } from "../v1/adapters/scheduler-file/schedulerFile.ts";
-import type { WorkflowStore } from "../v1/runtime/ports.ts";
-import type { Decision, Instance } from "../v1/core/spec.ts";
+import { validateSpec } from "../../v1/core/validateSpec.ts";
+import { decide } from "../../v1/core/decide.ts";
+import type { InputEnvelope } from "../../v1/core/spec.ts";
+import { handle } from "../../v1/runtime/engine.ts";
+import { FileWorkflowStore } from "../../v1/adapters/store-file/storeFile.ts";
+import { FileIdempotencyStore } from "../../v1/adapters/idempotency-file/idempotencyFile.ts";
+import { NoopEffectExecutor } from "../../v1/adapters/effects/noopEffects.ts";
+import { AllowAllQuotaLimiter } from "../../v1/adapters/quota/allowAllQuota.ts";
+import { ConsoleLogger } from "../../v1/adapters/telemetry/consoleLogger.ts";
+import { NoopMetrics } from "../../v1/adapters/telemetry/noopMetrics.ts";
+import { InMemorySequencer } from "../../v1/runtime/inMemorySequencer.ts";
+import { FileScheduler } from "../../v1/adapters/scheduler-file/schedulerFile.ts";
+import type { WorkflowStore } from "../../v1/runtime/ports.ts";
+import type { Decision, Instance } from "../../v1/core/spec.ts";
 
 test("validateSpec rejects non-object", () => {
   const res = validateSpec(null);
@@ -89,7 +89,6 @@ test("runtime enforces payload size and idempotency", async () => {
   const r1 = await handle(deps, big);
   assert.deepEqual(r1, { rejected: true, reason: "payload-too-large" });
 
-  // Small payload should run and then dedupe on replay.
   const ok: InputEnvelope = { ...big, eventId: "e2", payload: { a: 1 } };
   const r2 = await handle(deps, ok);
   assert.equal((r2 as any).decision?.rejection, undefined);
