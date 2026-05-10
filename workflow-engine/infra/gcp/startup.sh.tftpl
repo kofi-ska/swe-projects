@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates curl git docker.io docker-compose-plugin
+systemctl enable docker
+systemctl start docker
+
+mkdir -p ${app_root}
+if [ ! -d ${app_root}/${repo_dir}/.git ]; then
+  git clone --branch ${repo_ref} --depth 1 ${repo_url} ${app_root}/${repo_dir}
+else
+  cd ${app_root}/${repo_dir}
+  git fetch origin ${repo_ref}
+  git checkout ${repo_ref}
+  git pull --ff-only origin ${repo_ref}
+fi
+
+mkdir -p /var/lib/workflow-engine
+cat > ${app_root}/${repo_dir}/.env <<EOF
+PORT=${app_port}
+POSTGRES_DB=workflow
+POSTGRES_USER=workflow
+POSTGRES_PASSWORD=${postgres_password}
+MAX_BODY_BYTES=1048576
+EOF
+
+cd ${app_root}/${repo_dir}/workflow-engine
+docker compose up -d --build

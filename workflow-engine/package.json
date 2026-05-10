@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --experimental-strip-types --test src/tests/v1/index.test.ts src/tests/v2/index.test.ts",
-    "wf": "node --experimental-strip-types src/cli/index.ts"
+    "test": "node --experimental-strip-types --test src/tests/v1/index.test.ts src/tests/v2/index.test.ts src/tests/v3/index.test.ts",
+    "wf": "node --experimental-strip-types src/cli/index.ts",
+    "start:v3": "node --experimental-strip-types src/v3/server.ts"
   },
   "devDependencies": {
     "@types/node": "^25.6.0",
