@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { InputEnvelope, Instance, NextInputTemplate, Spec, TimeoutRule } from "../core/spec.ts";
 import type { Clock, EffectExecutor, IdempotencyStore, Logger, Metrics, QuotaLimiter, Scheduler, Sequencer, WorkflowStore } from "./ports.ts";
 import { decide } from "../core/decide.ts";
+import { withSpan } from "../../tracing.ts";
 
 export interface EngineDeps {
   spec: Spec;
@@ -18,8 +19,9 @@ export interface EngineDeps {
 
 export async function handle(deps: EngineDeps, input: InputEnvelope) {
   const started = Date.now();
-  return deps.sequencer.runExclusive(input.workflowId, async () => {
-    deps.metrics.inc("wf.input.received");
+  return deps.sequencer.runExclusive(input.workflowId, async () =>
+    withSpan("engine.handle", { workflowId: input.workflowId, eventId: input.eventId }, async () => {
+      deps.metrics.inc("wf.input.received");
 
     if (byteLengthJson(input.payload) > deps.spec.limits.maxPayloadBytes) {
       deps.metrics.inc("wf.input.rejected", { reason: "payload_too_large" });
@@ -112,9 +114,10 @@ export async function handle(deps: EngineDeps, input: InputEnvelope) {
       deps.logger.error("scheduling timeouts failed", { workflowId: input.workflowId, error: String(err) });
     }
 
-    deps.metrics.observeMs("wf.input.latency_ms", Date.now() - started);
-    return { decision, instance: updated };
-  });
+      deps.metrics.observeMs("wf.input.latency_ms", Date.now() - started);
+      return { decision, instance: updated };
+    })
+  );
 }
 
 function createInitialInstance(spec: Spec, workflowId: string): Instance {

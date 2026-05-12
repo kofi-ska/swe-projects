@@ -18,7 +18,15 @@ export function decide(spec: Spec, instance: Instance, input: InputEnvelope): De
     if (!res.ok) return { effects: [], nextInputs: [], rejection: { reason: "GUARD_FAILED" } };
   }
 
-  const effects = buildEffects(spec, transition, input);
+  const effectsResult = buildEffects(spec, transition, input);
+  if (effectsResult.skipped > 0) {
+    return {
+      effects: [],
+      nextInputs: [],
+      rejection: { reason: "INVALID_INPUT", message: "transition includes disallowed effect type" }
+    };
+  }
+  const effects = effectsResult.effects;
   const nextInputs = buildNextInputs(spec, transition);
 
   if (effects.length > spec.limits.maxEffectsPerDecision) {
@@ -52,11 +60,15 @@ function findTransition(transitions: Transition[], from: string, on: string): Tr
   return null;
 }
 
-function buildEffects(spec: Spec, transition: Transition, input: InputEnvelope): Effect[] {
+function buildEffects(spec: Spec, transition: Transition, input: InputEnvelope): { effects: Effect[]; skipped: number } {
   const out: Effect[] = [];
+  let skipped = 0;
   for (let i = 0; i < (transition.effects?.length ?? 0); i++) {
     const tpl = transition.effects![i]!;
-    if (!spec.permissions.effectTypesAllowlist.includes(tpl.type)) continue;
+    if (!spec.permissions.effectTypesAllowlist.includes(tpl.type)) {
+      skipped++;
+      continue;
+    }
     out.push({
       effectId: `${input.eventId}:effect:${i}`,
       type: tpl.type,
@@ -64,7 +76,7 @@ function buildEffects(spec: Spec, transition: Transition, input: InputEnvelope):
       idempotencyKey: `${input.eventId}:effect:${i}`
     });
   }
-  return out;
+  return { effects: out, skipped };
 }
 
 function buildNextInputs(_spec: Spec, transition: Transition): NextInputTemplate[] {

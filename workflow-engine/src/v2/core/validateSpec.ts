@@ -244,7 +244,7 @@ function validateNextInputs(v: unknown, issues: ValidationIssue[], path: string)
       return null;
     }
     const delayMs = ni.delayMs === undefined ? undefined : asNumber(ni.delayMs);
-    if (delayMs === null) {
+    if (delayMs !== undefined && delayMs === null) {
       issues.push({ level: "error", code: "NEXT_INPUT_DELAY_INVALID", message: "nextInput.delayMs must be a non-negative number", path: `${np}.delayMs` });
       return null;
     }
@@ -280,7 +280,8 @@ function validateContextPatch(v: unknown, issues: ValidationIssue[], path: strin
     }
     const set: Record<string, Json> = {};
     for (const k of Object.keys(v.set)) {
-      if (!isDotPath(k)) {
+      const normalized = normalizeContextPatchPath(k);
+      if (!normalized) {
         issues.push({ level: "error", code: "CTX_PATCH_KEY_INVALID", message: `invalid contextPatch.set key '${k}'`, path: `${path}.set` });
         return null;
       }
@@ -289,7 +290,7 @@ function validateContextPatch(v: unknown, issues: ValidationIssue[], path: strin
         issues.push({ level: "error", code: "CTX_PATCH_VAL_INVALID", message: `contextPatch.set['${k}'] must be JSON`, path: `${path}.set.${k}` });
         return null;
       }
-      set[k] = val;
+      set[normalized] = val;
     }
     out.set = set;
   }
@@ -300,14 +301,19 @@ function validateContextPatch(v: unknown, issues: ValidationIssue[], path: strin
       return null;
     }
     for (const u of unset) {
-      if (!isDotPath(u)) {
+      if (!normalizeContextPatchPath(u)) {
         issues.push({ level: "error", code: "CTX_PATCH_UNSET_PATH_INVALID", message: `invalid unset path '${u}'`, path: `${path}.unset` });
         return null;
       }
     }
-    out.unset = unset;
+    out.unset = unset.map((u) => normalizeContextPatchPath(u)!);
   }
   return out;
+}
+
+function normalizeContextPatchPath(path: string): string | null {
+  const normalized = path.startsWith("context.") ? path.slice("context.".length) : path;
+  return isDotPath(normalized) ? normalized : null;
 }
 
 export function validateSpec(spec: unknown): ValidationResult {
@@ -344,7 +350,6 @@ export function validateSpec(spec: unknown): ValidationResult {
 
   if (issues.some((i) => i.level === "error")) return { issues };
 
-  // Lightweight semantic checks
   if (states && initialState && !states.includes(initialState)) {
     issues.push({ level: "error", code: "INITIAL_STATE_UNKNOWN", message: "initialState must exist in states", path: "initialState" });
   }
@@ -399,7 +404,7 @@ export function validateSpec(spec: unknown): ValidationResult {
           const et = effects[j]!.type;
           if (!permissions.effectTypesAllowlist.includes(et)) {
             issues.push({
-              level: "warning",
+              level: "error",
               code: "EFFECT_TYPE_NOT_ALLOWED",
               message: `effect type '${et}' not in permissions.effectTypesAllowlist`,
               path: `${path}.effects[${j}].type`
@@ -417,7 +422,6 @@ export function validateSpec(spec: unknown): ValidationResult {
     }
   }
 
-  // Reachability warnings
   if (states && initialState && transitions.length > 0 && !issues.some((i) => i.level === "error")) {
     const adj = new Map<string, string[]>();
     for (const s of states) adj.set(s, []);
@@ -458,7 +462,6 @@ export function validateSpec(spec: unknown): ValidationResult {
     typedSpec.timeouts = parsedTimeouts;
   }
 
-  // Timeout semantic checks
   if (typedSpec.timeouts) {
     for (let i = 0; i < typedSpec.timeouts.length; i++) {
       const tr = typedSpec.timeouts[i]!;

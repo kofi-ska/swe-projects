@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
-import { validateSpec } from "../v1/core/validateSpec.ts";
-import { lintSpec } from "../v1/core/lintSpec.ts";
-import { decide } from "../v1/core/decide.ts";
+import {
+  AllowAllQuotaLimiter,
+  ConsoleLogger,
+  FileWorkflowStore,
+  InMemorySequencer,
+  NoopEffectExecutor,
+  NoopMetrics,
+  FileScheduler,
+  decide,
+  drainPendingWork,
+  handle,
+  lintSpec,
+  validateSpec
+} from "../v2/index.ts";
 import type { InputEnvelope, Instance } from "../v1/core/spec.ts";
-import { FileWorkflowStore } from "../v1/adapters/store-file/storeFile.ts";
-import { FileIdempotencyStore } from "../v1/adapters/idempotency-file/idempotencyFile.ts";
-import { NoopEffectExecutor } from "../v1/adapters/effects/noopEffects.ts";
-import { AllowAllQuotaLimiter } from "../v1/adapters/quota/allowAllQuota.ts";
-import { ConsoleLogger } from "../v1/adapters/telemetry/consoleLogger.ts";
-import { NoopMetrics } from "../v1/adapters/telemetry/noopMetrics.ts";
-import { InMemorySequencer } from "../v1/runtime/inMemorySequencer.ts";
-import { handle } from "../v1/runtime/engine.ts";
-import { FileScheduler } from "../v1/adapters/scheduler-file/schedulerFile.ts";
 
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
@@ -66,7 +68,12 @@ async function main() {
         const decision = decide(typedSpec, instance, input);
         console.log(JSON.stringify({ state: instance.state, input: input.type, decision }, null, 2));
         if (decision.rejection) break;
-        instance = { ...instance, state: decision.transitionTaken!.to, version: instance.version + 1 };
+        instance = {
+          ...instance,
+          state: decision.transitionTaken!.to,
+          context: applyContextPatch(instance.context, decision.contextPatch),
+          version: instance.version + 1
+        };
       }
       return;
     }
@@ -81,11 +88,9 @@ async function main() {
         {
           spec: typedSpec,
           store: new FileWorkflowStore(storeDir),
-          idempotency: new FileIdempotencyStore(storeDir),
           effects: new NoopEffectExecutor(),
           quota: new AllowAllQuotaLimiter(),
           sequencer: new InMemorySequencer(),
-          scheduler: new FileScheduler(storeDir),
           clock: { nowIso: () => new Date().toISOString() },
           logger: new ConsoleLogger(),
           metrics: new NoopMetrics()
@@ -103,9 +108,9 @@ async function main() {
     if (!workflowId) die("Missing --workflow-id <id>");
     if (!storeDir) die("Missing --store <dir>");
     const store = new FileWorkflowStore(storeDir);
-    const inst = await store.load(workflowId);
-    console.log(JSON.stringify(inst, null, 2));
-    process.exit(inst ? 0 : 1);
+    const projection = await store.load(workflowId);
+    console.log(JSON.stringify(projection, null, 2));
+    process.exit(projection ? 0 : 1);
     return;
   }
 
@@ -123,37 +128,20 @@ async function main() {
     if (vr.issues.some((i) => i.level === "error")) process.exit(1);
     const typedSpec = vr.spec!;
 
-    const scheduler = new FileScheduler(storeDir);
-    const due = await scheduler.popDue(new Date().toISOString(), max);
     const store = new FileWorkflowStore(storeDir);
-    const idem = new FileIdempotencyStore(storeDir);
     const deps = {
       spec: typedSpec,
       store,
-      idempotency: idem,
       effects: new NoopEffectExecutor(),
       quota: new AllowAllQuotaLimiter(),
       sequencer: new InMemorySequencer(),
-      scheduler,
       clock: { nowIso: () => new Date().toISOString() },
       logger: new ConsoleLogger(),
       metrics: new NoopMetrics()
     };
 
-    const results = [];
-    for (const task of due) {
-      const input: InputEnvelope = {
-        eventId: task.eventId,
-        workflowId: task.workflowId,
-        type: task.type,
-        occurredAt: new Date().toISOString(),
-        schemaVersion: typedSpec.schemaVersion,
-        payload: task.payload as any
-      };
-      results.push(await handle(deps, input));
-    }
-
-    console.log(JSON.stringify({ processed: due.length, results }, null, 2));
+    const results = await drainPendingWork(deps, max);
+    console.log(JSON.stringify(results, null, 2));
     return;
   }
 
@@ -191,6 +179,41 @@ function printIssues(issues: Array<{ level: string; code: string; message: strin
   for (const issue of issues) {
     console.error(`${issue.level.toUpperCase()} ${issue.code}${issue.path ? ` (${issue.path})` : ""}: ${issue.message}`);
   }
+}
+
+function applyContextPatch(context: unknown, patch: unknown): Instance["context"] {
+  if (!patch || typeof patch !== "object") return context as Instance["context"];
+  const base = JSON.parse(JSON.stringify(context));
+  const anyPatch = patch as { set?: Record<string, unknown>; unset?: string[] };
+  if (anyPatch.set) {
+    for (const [k, v] of Object.entries(anyPatch.set)) setDot(base, k, v);
+  }
+  if (anyPatch.unset) {
+    for (const k of anyPatch.unset) unsetDot(base, k);
+  }
+  return base as Instance["context"];
+}
+
+function setDot(obj: any, path: string, value: unknown) {
+  const parts = path.startsWith("context.") ? path.slice("context.".length).split(".") : path.split(".");
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const p = parts[i]!;
+    if (typeof cur[p] !== "object" || cur[p] === null || Array.isArray(cur[p])) cur[p] = {};
+    cur = cur[p];
+  }
+  cur[parts[parts.length - 1]!] = value;
+}
+
+function unsetDot(obj: any, path: string) {
+  const parts = path.startsWith("context.") ? path.slice("context.".length).split(".") : path.split(".");
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    const p = parts[i]!;
+    if (typeof cur[p] !== "object" || cur[p] === null) return;
+    cur = cur[p];
+  }
+  delete cur[parts[parts.length - 1]!];
 }
 
 main().catch((err) => {
