@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates curl git docker.io docker-compose-plugin
+systemctl enable docker
+systemctl start docker
+
+mkdir -p ${app_root}
+if [ ! -d ${app_root}/${repo_dir}/.git ]; then
+  git clone --branch ${repo_ref} --depth 1 ${repo_url} ${app_root}/${repo_dir}
+else
+  cd ${app_root}/${repo_dir}
+  git fetch origin ${repo_ref}
+  git checkout ${repo_ref}
+  git pull --ff-only origin ${repo_ref}
+fi
+
+mkdir -p /var/lib/workflow-engine
+if [ -z "${v3_api_key}" ]; then
+  echo "V3_API_KEY is required for public workflow-engine deployments" >&2
+  exit 1
+fi
+cat > ${app_root}/${repo_dir}/.env <<EOF
+PORT=${app_port}
+PUBLIC_DOMAIN=${public_domain}
+POSTGRES_DB=workflow
+POSTGRES_USER=workflow
+POSTGRES_PASSWORD=${postgres_password}
+MAX_BODY_BYTES=1048576
+MAX_CONCURRENT_REQUESTS=64
+MAX_REQUESTS_PER_MINUTE=120
+V3_API_KEY=${v3_api_key}
+REQUIRE_V3_API_KEY=true
+ENABLE_V1_HTTP=false
+OTEL_SERVICE_NAME=workflow-engine-v3
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces
+OTEL_TRACES_ENABLED=true
+EOF
+
+cd ${app_root}/${repo_dir}/workflow-engine
+docker compose up -d --build
