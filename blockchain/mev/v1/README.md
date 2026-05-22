@@ -304,6 +304,31 @@ flowchart LR
 - recoverability: restart does not invalidate terminal records
 - containment: failure in one component does not corrupt the lifecycle
 
+## Race Model
+
+```mermaid
+flowchart TB
+  G1[Go goroutines] --> R1[Queue / state access]
+  G1 --> R2[Retry / terminal state]
+  G1 --> R3[Dedupe / idempotency]
+  G1 --> R4[Worker bookkeeping]
+```
+
+| Race | Risk | Mitigation | Decision cost | Alternative |
+|---|---|---|---|---|
+| Queue/state access | Duplicate processing, stale reads | Single owner, locked transition path, atomic state write | More coordination around state updates | Actor model per bundle |
+| Retry vs terminal state | Conflicting terminal truth | Transition guards, compare-and-swap state write, one terminal state | Slightly stricter state handling | Treat retries as separate job IDs |
+| Dedupe vs insert | Duplicate acceptance | Atomic insert-or-reject, unique constraint, idempotency key | DB constraint dependency | In-memory dedupe cache plus DB fallback |
+| Worker bookkeeping | Wrong in-flight count, lost job tracking | Mutexed registry or channel ownership | More locking or serialization | Stateless workers with external tracking |
+| Counter / map updates | Data race in metrics/bookkeeping | Atomics for counters, mutex for maps | Slight implementation overhead | Single metrics aggregator goroutine |
+
+### v1 rule
+
+- one owner for mutable bundle state
+- no unbounded goroutine fan-out
+- no terminal-state ambiguity
+- dedupe must be atomic
+
 ## Reality Audit
 
 ### Ingress
@@ -426,6 +451,27 @@ Fix:
 - log metadata, not payloads
 - emit state transitions
 - record per-stage latency
+
+## Decision Cost
+
+### Keep
+
+- in-process state machine
+- bounded queue
+- hash-based dedupe
+- append-only records
+
+### Cost
+
+- limited concurrency without a broker
+- stronger transition discipline
+- careful locking around shared state
+
+### Alternative
+
+- brokered dispatch
+- partitioned workers
+- external state coordinator
 
 ## v1 Test Plan
 

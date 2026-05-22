@@ -69,3 +69,4 @@ Fourth release.
 - [v1 README](v1/README.md)
 - [v1 Lookahead](v1/lookahead.md)
 - [v2 README](v2/README.md)
+- [v3 README](v3/README.md)

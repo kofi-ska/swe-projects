@@ -339,6 +339,56 @@ OTEL is mandatory in v2.
 - terminal records are stable
 - replay produces a consistent trail
 
+## Race Model
+
+```mermaid
+flowchart TB
+  W1[Workers] --> E1[Event ordering]
+  W1 --> E2[Commit vs event flush]
+  W1 --> E3[Broker delivery]
+  W1 --> E4[Replay]
+  W1 --> E5[Checkpoint publication]
+```
+
+| Race | Risk | Mitigation | Decision cost | Alternative |
+|---|---|---|---|---|
+| Event ordering | Out-of-order audit history | Per-bundle sequence numbers, append-only writer | More serialization per key | Single writer per partition key |
+| Commit vs flush | Checkpoint before durable events | Batch barrier, commit after flush | Higher commit latency | Async checkpoint with reconciliation pass |
+| Broker delivery | Duplicate or delayed messages | Idempotent consumers, dedupe index, monotonic sequence | Consumer complexity | No broker; direct writes only |
+| Replay race | Original and replayed event both process | Versioned state write, compare-and-set | More state checks | Strict single-threaded recovery |
+| Checkpoint publication | Late events after batch seal | Explicit batch boundary, sealed batch state | Less flexible batching | Continuous log with no checkpointing |
+
+### v2 rule
+
+- event sequence is monotonic
+- batch is sealed before checkpoint
+- consumers are idempotent
+- replay is fenced by version
+- broker messages are not trusted for exactly-once semantics
+
+## Decision Cost
+
+### Keep
+
+- append-only events
+- batch commitments
+- signed checkpoints
+- brokered work
+
+### Cost
+
+- ordering discipline per key
+- idempotent consumers
+- batch sealing and flush barriers
+- audit-aware replay logic
+
+### Alternative
+
+- direct synchronous writes
+- no broker
+- no batch commitments
+- weaker replay guarantees
+
 ## Failure model
 
 ### Failure classes
