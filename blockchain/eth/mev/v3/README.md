@@ -1,122 +1,378 @@
 # MEV Relay v3
 
-v3 is the distributed blockchain-rigour pass.
+v3 is the mainnet-grade distributed control plane for the MEV relay.
 
-It assumes mainnet-grade operation, multi-region deployment, and hostile conditions across the full stack.
+It is designed for hostile conditions, shard-local authority, conservative interpretation, and deterministic recovery. It is not a microservice mesh. It is a public ETH MEV relay with a distributed internal control model.
 
-## Scope
+## Purpose
 
-### In scope
+v3 exists to ensure that the relay:
+- stays compatible with the wider ETH MEV relay surface
+- rejects unsafe or stale work cheaply
+- preserves value under deadline pressure
+- avoids split-brain authority
+- recovers deterministically after failure
+- keeps audit evidence coherent
 
-- distributed ownership rules
-- consistency semantics
-- partition behavior
-- rollout and migration rules
-- multi-region state handling
-- scheduler fairness
-- storage corruption recovery
-- latency percentile targets
-- economic and game-theoretic attack handling
+## v2 vs v3
 
-### Out of scope
+| Dimension | v2 | v3 |
+|---|---|---|
+| Control model | bounded relay with value-aware admission | shard-authoritative distributed control plane |
+| Authority | implicit single-process authority | explicit leases, epochs, and fences |
+| State | Valkey-backed coordination state | shard-local authoritative state with failover discipline |
+| Routing | local bounded queueing | deterministic shard routing |
+| Recovery | bounded replay and audit coherence | fenced recovery and region-safe rejoin |
+| Chain view | conservative estimator | conservative estimator plus confidence and provenance |
+| Queue target | under `1s`, hard unsafe at `12s` | same target, with shard-local enforcement |
+| Failure goal | bound loss | prevent conflicting truth under partition or rollout overlap |
+| Infra cost | about `$250-$450/month` depending on state choice | similar baseline, plus multi-region only if proven necessary |
 
-- changing the v2 audit model
-- dropping bounded failure behavior
-- ignoring mainnet latency pressure
+## Deployment model
 
-## Graph model
+Target deployment:
+- GCP infrastructure provisioned by Terraform
+- Nomad for orchestration and rollout
+- 1 active region by default
+- 3-zone control-plane quorum where applicable
+- public HTTPS edge
+- No Envoy by default
+- Jaeger for traces
+- Cloud Storage for audit artifacts
+- Valkey or Memorystore for hot coordination state
 
-v3 extends v2.
+Baseline 24/7 cost target:
+- self-hosted hot state: about `$250-$300/month`
+- managed hot state: about `$350-$450/month`
+- excludes engineering, egress, and incident cost
 
-- `G_life` bundle lifecycle
-- `G_event` append-only event graph
-- `G_commit` commitment graph
-- `G_region` region ownership graph
-- `G_consistency` consistency and consensus graph
-- `G_sched` scheduling and fairness graph
-- `G_fail` failure graph
-- `G_cap` capacity graph
+## Public surfaces
 
-`M3 = (G_life, G_event, G_commit, G_region, G_consistency, G_sched, G_fail, G_cap, I, Gg)`
+v3 must remain compatible with the standard ETH MEV relay shape:
+- validator-facing relay endpoints
+- builder-facing block submission endpoints
+- validator registration lookup
+- health and readiness
+- metrics, logs, and traces
+
+Core public endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `/relay/v1/data/validator_registration` | validator registration lookup |
+| `/relay/v1/builder/validators` | builder-facing validator set |
+| `/relay/v1/builder/blocks` | builder block submission |
+| `/healthz` / `/readyz` | operational health and routing |
+
+The internal design may be distributed; the public contract must remain standard.
+
+## Architecture
 
 ```mermaid
 flowchart TB
-  L[Lifecycle] --> E[Events]
-  E --> C[Commitments]
-  C --> R[Region ownership]
-  R --> S[Consistency and consensus]
-  S --> Q[Scheduler and fairness]
-  Q --> F[Failure handling]
-  Q --> P[Capacity limits]
+  subgraph Edge["Edge"]
+    I["Ingress filter<br/>cheap reject, auth, size gate"]
+    P["Prefilter<br/>duplicate probe, cache, Bloom optional"]
+    R["Shard router<br/>consistent or rendezvous hashing"]
+    I --> P --> R
+  end
+
+  subgraph Authority["Shard Authority"]
+    A["Authority manager<br/>lease, epoch, fence"]
+    L["Lease table<br/>owner, expiry, token"]
+    O["Ownership map<br/>shard, bundle, region"]
+    A --> L
+    A --> O
+  end
+
+  subgraph Decision["Decision Plane"]
+    S["Admission scorer<br/>conservative EV, deadline, confidence"]
+    Q["Per-shard priority queue<br/>bounded, deadline-aware"]
+    F["Fence check<br/>reject stale writers"]
+    S --> Q --> F
+  end
+
+  subgraph Execution["Execution Plane"]
+    W["Worker pool<br/>bounded concurrency"]
+    X["Backend adapter<br/>local, Anvil, Sepolia"]
+    C["Chain-view cache<br/>confidence, finality, provenance"]
+    W --> X --> C
+  end
+
+  subgraph State["State Plane"]
+    D["Exact dedupe map"]
+    I2["Inflight map"]
+    T["Retry map<br/>heap or timing wheel"]
+    K["Checkpoint index"]
+    B["Bundle record map"]
+    D --> I2 --> T --> K --> B
+  end
+
+  subgraph Audit["Audit Plane"]
+    E["Append-only event log"]
+    M["Merkle batch builder"]
+    H["Checkpoint batch index"]
+    V["Durable evidence store"]
+    E --> M --> H --> V
+  end
+
+  subgraph Recovery["Recovery"]
+    U["Replay cursor"]
+    Z["Recovery index<br/>latest good checkpoint, shard status"]
+    Rf["Recovery agent<br/>quarantine, rebuild, re-fence"]
+    U --> Z --> Rf
+  end
+
+  subgraph Obs["Observability"]
+    J["Jaeger traces"]
+    Tm["Metrics<br/>queue age, value, retry debt"]
+    Lg["Logs<br/>correlated, sampled, bounded"]
+  end
+
+  subgraph Orchestration["Nomad"]
+    N["Placement, restart, rollout, health"]
+  end
+
+  subgraph Offline["Offline validation DSA"]
+    G["SCC / reachability<br/>recovery and dependency validation"]
+    Xf["Min-cut / flow<br/>capacity analysis"]
+    Gr["Graph checks<br/>lifecycle, ownership, recovery"]
+    G --> Gr
+    Xf --> Gr
+  end
+
+  R --> A --> S --> Q --> W --> X
+  S --> D
+  W --> D
+  W --> E --> M --> V
+  S --> J
+  X --> J
+  A --> J
+  D --> Tm
+  S --> Tm
+  X --> Tm
+  A --> Tm
+  E --> Lg
+  W --> Lg
+  V --> U
+  B --> U
+  K --> U
+  Gr --> Rf
+  N --> A
+  N --> W
+  N --> X
+  N --> Rf
+  N --> J
 ```
 
-## Races
+## Non-functional requirements
 
-### Cross-region races
+| NFR | Target |
+|---|---|
+| Correctness | one owner per shard or bundle; no double terminalization |
+| Safety | fail closed on uncertainty; no optimistic stale-state actions |
+| Boundedness | queue, retries, retention, and scans are capped |
+| Latency | cheap reject path; no global coordination on hot path |
+| Throughput | shard-local workers; bounded backpressure; async audit |
+| Recoverability | deterministic replay with fencing and version checks |
+| Availability | one shard or region may fail without corrupting others |
+| Fault isolation | no global hot key, no global lock, no global queue |
+| Auditability | every accepted decision leaves reconstructable evidence |
+| Observability | traces, metrics, logs show authority, pressure, and provenance |
+| Consistency | authority state is fenced; derived state may lag by design |
+| Scalability | scale by sharding, not by adding global coordination |
+| Fairness | starvation and priority inversion are bounded |
+| Determinism | same evidence and epoch produce the same terminal truth |
+| Operability | clear health states, clear status codes, clear failover rules |
 
-- split-brain ownership
-- double commit
-- stale read after failover
-- replay during recovery
-- rollout overlap between versions
+## Operating envelope
 
-| Race | Risk | Mitigation | Decision cost | Alternative |
-|---|---|---|---|---|
-| Split-brain ownership | Two regions act on the same bundle | Leases, fencing tokens, quorum ownership | More coordination and failover logic | Active-passive only |
-| Double commit | Two terminal truths | Single commit authority, quorum check, version fence | Higher commit latency | Strict single-region authority |
-| Stale read | Wrong decision from outdated state | Versioned reads, read-your-writes where needed | More read coordination | Relaxed consistency with delayed decisions |
-| Replay during recovery | Old state reappears as current | Epoch numbers, recovery fencing | More recovery metadata | Manual recovery only |
-| Rollout overlap | Old and new code both process flow | Migration windows, compatibility gates, cutover fence | Slower deploys | Big-bang cutover |
+Runtime defaults:
+- `QUEUE_DEPTH=1024` per shard
+- `WORKER_COUNT=4` per shard
+- `MAX_RETRIES=3`
+- `RETRY_BACKOFF=500ms`
+- `REQUEST_TIMEOUT=2s`
+- `MAX_PAYLOAD_BYTES=256KiB`
+- `MAX_INFLIGHT_PER_CLIENT=20`
+- `HISTORY_LIMIT=256`
+- `STATE_RETENTION=24h`
+- `WAL_MAX_ENTRIES=2048`
 
-### Scheduler races
+Rules:
+- queue age target: under `1s`
+- hard unsafe at `1 slot` (`12s`)
+- hard unsafe if queue is full or authority is stale
+- reject work that cannot finish within deadline slack
+- keep expensive work off the hot path
 
-- starvation
-- priority inversion
-- unfair tenant capture
-- deadline collapse
+## DSA
 
-| Race | Risk | Mitigation | Decision cost | Alternative |
-|---|---|---|---|---|
-| Starvation | Valid work never runs | Fair queue discipline, aging | Lower peak priority performance | Strict priority only |
-| Priority inversion | Low-priority work blocks high-value work | Priority inheritance / bounded queue classes | More scheduler logic | Single FIFO queue |
-| Tenant capture | One client dominates capacity | Per-tenant quotas, weighted fairness | Lower utilization under burst | Best-effort only |
-| Deadline collapse | Missed mainnet windows | Deadline-aware scheduling, preemption | More scheduling overhead | No deadline guarantees |
+### Live DSA
+- consistent or rendezvous hashing for shard routing
+- lease / epoch / fence records for authority
+- exact dedupe map for idempotency
+- per-shard priority queue for admission and retries
+- inflight map for bounded concurrency
+- append-only event log for durable evidence
+- Merkle trees for checkpoint sealing
 
-## Consistency semantics
+### Offline DSA
+- SCC and reachability for recovery and dependency validation
+- min-cut / flow for capacity analysis
+- replay graph checks for recovery safety
 
-- define which writes are linearizable
-- define which reads may be stale
-- define what is authoritative after failover
-- define what can be recomputed from evidence
+### What stays hot
+- shard routing
+- authority validation
+- dedupe
+- queue priority
+- retry deadline lookup
 
-## Recovery under partial corruption
+### What stays offline
+- SCC
+- reachability over large graphs
+- flow / cut analysis
+- full replay scans
 
-- detect torn writes
-- reject partial checkpoints
-- rebuild from last valid commitment
-- fence stale replicas
+## Risk model
+
+| Risk | Operational consequence | Control |
+|---|---|---|
+| split-brain ownership | two nodes act on the same truth | leases, epochs, fencing tokens |
+| stale read | wrong admission or terminal decision | versioned reads, read-your-writes where needed |
+| retry storm | backend burn and queue collapse | exact retry cap, economic retry gating |
+| broker lag | delayed or duplicated event handling | idempotent consumers, broker as transport only |
+| checkpoint corruption | recovery gap | Merkle sealing, valid checkpoint only, fail closed |
+| audit divergence | evidence trail mismatch | append-only events, bounded flush, coherence checks |
+| queue pressure | stale work displaces fresh work | deadline-aware admission and shedding |
+| rollout overlap | old and new code disagree | version fences and cutover windows |
+| chain-view uncertainty | wrong decision from partial truth | conservative interpretation and confidence gating |
+| observability overload | telemetry becomes the outage | sampling, bounded cardinality, no raw payloads by default |
+
+## Status codes
+
+| Condition | Status |
+|---|---|
+| accepted into bounded pipeline | `202 Accepted` |
+| malformed request | `400 Bad Request` |
+| unauthorized / forbidden | `401 Unauthorized` / `403 Forbidden` |
+| duplicate, ownership conflict, or stale claim | `409 Conflict` |
+| stale precondition, stale epoch, or stale chain-view contract | `412 Precondition Failed` |
+| payload too large | `413 Payload Too Large` |
+| structurally valid but economically invalid | `422 Unprocessable Entity` |
+| rate / inflight / budget exceeded | `429 Too Many Requests` |
+| unsafe state or unhealthy dependency | `503 Service Unavailable` |
+| upstream timeout | `504 Gateway Timeout` |
+| internal invariant failure | `500 Internal Server Error` |
+
+## Observability
+
+Jaeger traces must carry:
+- request ID
+- bundle ID
+- shard ID
+- region ID
+- lease ID
+- epoch
+- fence token
+- chain-view ID
+- finality depth
+- confidence score
+- recovery state
+- decision outcome
+
+Metrics must include:
+- request rate
+- queue depth
+- queue age
+- queue net value
+- retry debt
+- worker saturation
+- backend latency
+- state latency
+- broker latency
+- decision rate
+- dead-letter rate
 
 ## Economics
 
-- cost per bundle under contention
-- cost of failover
-- cost of replay
-- cost of fairness
-- cost of proof and checkpointing
+This is a capitalized infrastructure asset with recurring operating cost.
+It is economically negative by default until value preservation or revenue is proven.
 
-## Alternatives
+### Live cost structure
 
-- stronger consensus
-- simpler active-passive ownership
-- strict single-region control
-- relaxed consistency with delayed settlement
+| Cost item | Lean target | Notes |
+|---|---:|---|
+| Compute | about `$245/month` | 3 control-plane VMs, 2 workers, 1 state VM, 1 broker VM |
+| Managed hot state | about `+$110/month` | if Memorystore replaces self-hosted state |
+| Storage | low tens/month | audit artifacts and checkpoints |
+| Logging / trace | `0` while under free tiers | becomes material if per-request telemetry is too verbose |
+| Egress | variable | depends on builder and validator traffic |
+| Engineering / on-call | not included | usually larger than infra once the system is live |
 
-## Exit criteria
+### Go-runtime cost
 
-- ownership is unambiguous
-- consistency rules are explicit
-- partitions have defined behavior
-- rollout has a fence
-- fairness is measurable
-- corruption recovery is testable
-- latency percentiles are defined
+Hot-path cost is dominated by:
+- allocations
+- goroutine churn
+- lock contention
+- retries
+- synchronous logging
+- remote calls in the admission path
+
+The economic rule is simple:
+- cheaper reject path wins
+- bounded queues win
+- sampled telemetry wins
+- retries only when remaining value is positive
+
+The economic test is:
+
+`Net = ValuePreserved + Revenue - OperatingCost - CapitalCost - FailureLosses`
+
+If `Net > 0`, the system is value-positive.
+If direct revenue is added later, it can become a profit center.
+
+### Break-even view
+
+- `~$250/month` lean self-hosted baseline
+- `~$350/month` with managed hot state
+- at `10,000` accepted bundles/month, infra-only break-even is roughly `$0.025-$0.035` per accepted bundle
+- at `100,000` accepted bundles/month, infra-only break-even is roughly `$0.0025-$0.0035` per accepted bundle
+- if the relay preserves more MEV value than it costs, it is justified even without direct fees
+
+## Deployment checklist
+
+- GCP networking and IAM
+- Terraform state in GCS
+- Nomad cluster
+- relay nodes
+- state nodes or managed state
+- audit storage
+- Jaeger backend
+- metrics and logs
+- public HTTPS relay edge
+- network-specific config for mainnet and Sepolia
+
+## Success criteria
+
+- public relay APIs remain compatible with the wider ETH MEV ecosystem
+- one shard has one authority at a time
+- stale writes are rejected
+- queue age and retry debt remain bounded
+- audit trail is reconstructable
+- recovery is deterministic
+- chain interpretation is conservative
+- status codes reflect real safety
+- `go test ./...` passes in v3
+
+## Non-goals
+
+- Envoy by default
+- gRPC everywhere
+- microservice sprawl
+- global hot-path coordination
+- unbounded replay
+- active-active multi-region before authority is proven
+- optimistic action on uncertain chain state
