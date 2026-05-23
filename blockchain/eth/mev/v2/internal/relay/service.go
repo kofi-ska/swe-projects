@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -248,15 +249,19 @@ func (s *Service) scoreAdmission(rec model.BundleRecord) admissionDecision {
 		deadlineAt = now.Add(s.cfg.RequestTimeout)
 	}
 	count := len(rec.Request.Txs)
-	value := float64(count) * s.cfg.ValuePerTx
+	freshness := 1.0
+	if s.cfg.RequestTimeout > 0 {
+		freshness = clamp01(float64(deadlineAt.Sub(now)) / float64(s.cfg.RequestTimeout))
+	}
+	value := s.cfg.ValuePerTx * (1 + math.Log1p(float64(count))) * freshness
 	serviceMS := s.estimateServiceMS(count)
-	cost := float64(serviceMS) * s.cfg.CostPerMS
+	cost := float64(serviceMS)*s.cfg.CostPerMS + float64(count)*s.cfg.CostPerTx
 	slack := deadlineAt.Sub(now)
 	net := value - cost
 	if serviceMS <= 0 {
 		serviceMS = 1
 	}
-	priority := (net / float64(serviceMS)) + slack.Seconds()
+	priority := (net / float64(serviceMS)) + freshness
 	accepted := true
 	reason := "admitted"
 	if slack <= s.cfg.MinDeadlineSlack {
@@ -280,6 +285,17 @@ func (s *Service) scoreAdmission(rec model.BundleRecord) admissionDecision {
 		priority:  priority,
 		reason:    reason,
 		accepted:  accepted,
+	}
+}
+
+func clamp01(v float64) float64 {
+	switch {
+	case v < 0:
+		return 0
+	case v > 1:
+		return 1
+	default:
+		return v
 	}
 }
 
@@ -361,7 +377,7 @@ func (s *Service) processRetry(ctx context.Context, id string) {
 	if rec.State != model.StateRetryPending {
 		return
 	}
-	if rec.RetryCount > s.cfg.MaxRetries {
+	if rec.RetryCount >= s.cfg.MaxRetries {
 		if _, err := s.state.TransitionBundle(ctx, id, model.StateRetryPending, model.StateDeadLetter, "retry exhausted"); err != nil {
 			return
 		}
@@ -383,6 +399,35 @@ func (s *Service) processRetry(ctx context.Context, id string) {
 		return
 	}
 	if err := s.emitTransition(ctx, rec, model.StateRetryPending, model.StateQueued, "retry queued"); err != nil {
+		return
+	}
+	now := time.Now().UTC()
+	if !rec.DeadlineAt.IsZero() && now.After(rec.DeadlineAt) {
+		if _, err := s.state.TransitionBundle(ctx, id, model.StateQueued, model.StateDeadLetter, "retry expired"); err != nil {
+			return
+		}
+		rec, _, err = s.state.GetBundle(ctx, id)
+		if err != nil {
+			return
+		}
+		if err := s.emitTransition(ctx, rec, model.StateQueued, model.StateDeadLetter, "retry expired"); err != nil {
+			return
+		}
+		_ = s.finishTerminal(ctx, id, model.StateDeadLetter, "retry expired")
+		return
+	}
+	if rec.ExpectedValue-rec.ExpectedCost < s.cfg.MinNetValue {
+		if _, err := s.state.TransitionBundle(ctx, id, model.StateQueued, model.StateDeadLetter, "retry uneconomic"); err != nil {
+			return
+		}
+		rec, _, err = s.state.GetBundle(ctx, id)
+		if err != nil {
+			return
+		}
+		if err := s.emitTransition(ctx, rec, model.StateQueued, model.StateDeadLetter, "retry uneconomic"); err != nil {
+			return
+		}
+		_ = s.finishTerminal(ctx, id, model.StateDeadLetter, "retry uneconomic")
 		return
 	}
 	evicted, accepted, pushErr := s.queue.Push(scheduler.Item{
@@ -484,7 +529,7 @@ func (s *Service) process(ctx context.Context, item scheduler.Item) {
 	result, err := s.backend.Simulate(simCtx, rec)
 
 	if err != nil {
-		if retryable(err) && rec.RetryCount < s.cfg.MaxRetries {
+		if retryable(err) && rec.RetryCount+1 <= s.cfg.MaxRetries {
 			if _, err := s.state.TransitionBundle(ctx, rec.ID, model.StateSimulating, model.StateRetryPending, "transient failure"); err != nil {
 				return
 			}
@@ -622,6 +667,9 @@ func (s *Service) finishTerminal(ctx context.Context, id string, terminal model.
 	if !ok {
 		return errors.New("bundle not found")
 	}
+	defer func() {
+		_, _ = s.state.ReleaseInflight(ctx, rec.ClientID)
+	}()
 	_, err = s.state.TransitionBundle(ctx, id, terminal, model.StatePersisted, reason)
 	if err != nil {
 		return err
@@ -687,9 +735,6 @@ func (s *Service) finishTerminal(ctx context.Context, id string, terminal model.
 		return err
 	}
 	if err := s.state.DeleteEvents(ctx, id); err != nil {
-		return err
-	}
-	if _, err := s.state.ReleaseInflight(ctx, rec.ClientID); err != nil {
 		return err
 	}
 	return nil

@@ -34,6 +34,7 @@ type Config struct {
 	MinDeadlineSlack     time.Duration
 	MaxQueueAge          time.Duration
 	ValuePerTx           float64
+	CostPerTx            float64
 	CostPerMS            float64
 }
 
@@ -66,6 +67,7 @@ func Load() Config {
 		MinDeadlineSlack:     envDuration("MIN_DEADLINE_SLACK", 500*time.Millisecond),
 		MaxQueueAge:          envDuration("MAX_QUEUE_AGE", 3*time.Second),
 		ValuePerTx:           envFloat("VALUE_PER_TX", 1),
+		CostPerTx:            envFloat("COST_PER_TX", 0.25),
 		CostPerMS:            envFloat("COST_PER_MS", 0.01),
 	}
 }

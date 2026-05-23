@@ -48,3 +48,24 @@ func TestQueueEvictsWorst(t *testing.T) {
 		t.Fatalf("expected high after eviction, got %s", item.ID)
 	}
 }
+
+func TestQueueDrainsMultipleItems(t *testing.T) {
+	q := New(4)
+	now := time.Now().UTC()
+
+	if _, accepted, err := q.Push(Item{ID: "a", Priority: 1, DeadlineAt: now.Add(time.Second), EnqueuedAt: now}); err != nil || !accepted {
+		t.Fatalf("push a failed: accepted=%v err=%v", accepted, err)
+	}
+	if _, accepted, err := q.Push(Item{ID: "b", Priority: 2, DeadlineAt: now.Add(time.Second), EnqueuedAt: now.Add(time.Millisecond)}); err != nil || !accepted {
+		t.Fatalf("push b failed: accepted=%v err=%v", accepted, err)
+	}
+
+	item, ok, err := q.Pop(context.Background())
+	if err != nil || !ok || item.ID != "b" {
+		t.Fatalf("expected b first, got item=%+v ok=%v err=%v", item, ok, err)
+	}
+	item, ok, err = q.Pop(context.Background())
+	if err != nil || !ok || item.ID != "a" {
+		t.Fatalf("expected a second, got item=%+v ok=%v err=%v", item, ok, err)
+	}
+}

@@ -35,6 +35,8 @@ For each bundle, the relay estimates:
 - deadline slack
 - resource demand
 
+The estimate is conservative. It is a lower bound, not an oracle.
+
 The relay admits and schedules work when the expected net value is positive and the work is still timely.
 
 The objective is to maximize expected value under finite:
@@ -55,6 +57,7 @@ The control rule is:
 - keep queues bounded
 - keep retries bounded
 - prefer short, high-value jobs when pressure rises
+- use a lower-bound value estimate, not a synthetic oracle
 
 ## Non-functional requirements
 
@@ -82,6 +85,7 @@ The control rule is:
 - `HISTORY_LIMIT=256`
 - `STATE_RETENTION=24h`
 - `WAL_MAX_ENTRIES=2048`
+- `COST_PER_TX=0.25`
 - `BACKEND_KIND=anvil`
 - `BACKEND_URL=http://127.0.0.1:8545`
 
@@ -381,6 +385,17 @@ OTEL is mandatory.
 - dead-letter rate
 - decision rate
 
+### Why
+These metrics are the control surface for the knapsack policy.
+
+- request rate shows incoming pressure
+- queue depth and queue age show whether fresh work is still getting through
+- queue net value shows whether the backlog is economically worth keeping
+- retry debt shows how much capacity is being burned on rework
+- worker saturation shows whether compute is the active bottleneck
+- simulation, state, and broker latency show where the hot path is losing time
+- retry, dead-letter, and decision rates show whether the policy is shedding, converging, or churning
+
 ### Logs
 - structured
 - redacted
@@ -403,25 +418,20 @@ OTEL is mandatory.
 
 Choose the broker from measured throughput and audit needs.
 
-### NATS / JetStream
-- low-latency dispatch
-- simple operations
-- moderate durability
+| Broker | p50 dispatch latency | Replay / retention | Ops burden | Multi-consumer fanout | Fit for v2 hot path | Fit for v2 audit path | Quantified tradeoff |
+|---|---:|---:|---:|---:|---:|---:|---|
+| NATS / JetStream | 9/10 | 6/10 | 8/10 | 7/10 | 10/10 | 7/10 | Best if the relay needs fast bounded transport and acceptable durable retention without platform drag. |
+| Kafka | 6/10 | 10/10 | 5/10 | 10/10 | 6/10 | 10/10 | Best if replay, retention, and consumer fanout dominate and the team can pay the coordination cost. |
+| Pulsar | 7/10 | 9/10 | 4/10 | 9/10 | 7/10 | 9/10 | Best if multi-tenancy and tiered storage matter enough to justify a heavier control plane. |
+| Managed pub/sub | 8/10 | 5/10 | 9/10 | 6/10 | 8/10 | 5/10 | Best if operator burden is the primary constraint and weaker retention is acceptable. |
 
-### Kafka
-- durable event history
-- replay
-- multiple consumers
-- audit-friendly retention
+### Recommendation
+- **Hot path:** NATS / JetStream
+- **Audit / replay heavy deployments:** Kafka
+- **Multi-tenant platform deployments:** Pulsar
+- **Lowest-ops environments:** managed pub/sub
 
-### Pulsar
-- multi-tenancy
-- tiered storage
-- heavier platform
-
-### Managed pub/sub
-- lower ops burden
-- less control
+For v2 specifically, the default is NATS / JetStream because the relay needs low-latency bounded transport first, with Valkey and WAL carrying the coordination and audit state.
 
 ## Success criteria
 

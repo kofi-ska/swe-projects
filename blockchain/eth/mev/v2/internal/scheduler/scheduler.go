@@ -34,7 +34,7 @@ func New(capacity int) *Queue {
 	if capacity <= 0 {
 		capacity = 1
 	}
-	q := &Queue{cap: capacity, notify: make(chan struct{}, 1)}
+	q := &Queue{cap: capacity, notify: make(chan struct{}, capacity)}
 	return q
 }
 
@@ -51,6 +51,7 @@ func (q *Queue) Push(item Item) (evicted *Item, accepted bool, err error) {
 	if q.cap == 0 {
 		return nil, false, errors.New("queue disabled")
 	}
+	prevLen := len(q.items)
 	if len(q.items) >= q.cap {
 		worst := q.items[len(q.items)-1]
 		if !betterThan(item, worst) {
@@ -67,13 +68,23 @@ func (q *Queue) Push(item Item) (evicted *Item, accepted bool, err error) {
 	copy(q.items[idx+1:], q.items[idx:])
 	q.items[idx] = item
 	accepted = true
-	q.signal()
+	if len(q.items) > prevLen {
+		q.notify <- struct{}{}
+	}
 	return evicted, accepted, nil
 }
 
 // Pop returns the highest priority item, blocking until one exists or the queue closes.
 func (q *Queue) Pop(ctx context.Context) (Item, bool, error) {
 	for {
+		select {
+		case <-ctx.Done():
+			return Item{}, false, ctx.Err()
+		case _, ok := <-q.notify:
+			if !ok {
+				return Item{}, false, nil
+			}
+		}
 		q.mu.Lock()
 		if len(q.items) > 0 {
 			item := q.items[0]
@@ -82,16 +93,7 @@ func (q *Queue) Pop(ctx context.Context) (Item, bool, error) {
 			q.mu.Unlock()
 			return item, true, nil
 		}
-		if q.closed {
-			q.mu.Unlock()
-			return Item{}, false, nil
-		}
 		q.mu.Unlock()
-		select {
-		case <-ctx.Done():
-			return Item{}, false, ctx.Err()
-		case <-q.notify:
-		}
 	}
 }
 
@@ -132,8 +134,11 @@ func (q *Queue) Snapshot() []Item {
 func (q *Queue) Close() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	if q.closed {
+		return
+	}
 	q.closed = true
-	q.signal()
+	close(q.notify)
 }
 
 func betterThan(a, b Item) bool {
@@ -153,11 +158,4 @@ func betterThan(a, b Item) bool {
 		return a.EnqueuedAt.Before(b.EnqueuedAt)
 	}
 	return a.ID < b.ID
-}
-
-func (q *Queue) signal() {
-	select {
-	case q.notify <- struct{}{}:
-	default:
-	}
 }
