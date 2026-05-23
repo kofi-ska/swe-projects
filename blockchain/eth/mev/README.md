@@ -1,70 +1,86 @@
-# MEV
+# MEV Relay
 
-Trusted, low-latency decision layer for private MEV flow.
+Ethereum / EVM MEV relay workspace.
 
-This workspace holds the Go implementation of the relay stack. We start with Anvil and a modular monolith, then harden the same shape into production later.
+This project is organized as a versioned strategy:
 
-## What We Are Building
+- `v0` legacy prototype
+- `v1` bounded hostile relay
+- `v2` auditable, replayable, brokered relay
+- `v3` distributed blockchain rigor
 
-- public bundle intake
-- relay core for validation, queueing, and coordination
-- simulator for local or forked EVM execution
-- scoring and decisioning
-- builder handoff or mock publish
-- storage, audit, and observability
+## Strategy
+
+### v0
+Prototype shape only.
+
+- relay / simulator / builder split
+- Compose deployment
+- gRPC between services
+- TimescaleDB and Superset
+- Anvil-backed simulation
+
+### v1
+Bounded control.
+
+- accept
+- validate
+- queue
+- simulate
+- score
+- persist
+- decide
+
+Focus:
+- lifecycle state machine
+- bounded queueing
+- bounded retries
+- hostile-load handling
+- deterministic failure modes
+- audit-friendly records
+
+### v2
+Audit and evidence.
+
+- append-only events
+- batch commitments
+- signed checkpoints
+- replay-safe dedupe
+- brokered work distribution
+- OTEL traces / metrics / logs
+- recovery and retention controls
+
+Focus:
+- tamper-evident history
+- replayability
+- throughput with evidence
+- audit-readiness
+
+### v3
+Distributed rigor.
+
+- consistency semantics
+- partition tolerance
+- multi-region behavior
+- rollout and migration
+- fairness and scheduling
+- storage corruption recovery
+- economic and adversarial modeling
+
+Focus:
+- mainnet-grade distributed behavior
+- consensus / ownership / recovery rigor
+- blockchain-system correctness
 
 ## Architecture
 
-- modular monolith in Go
+- Go modular monolith first
 - domain modules for `searcher`, `relay`, `builder`, and `validator`
-- swappable chain backend
-- Anvil by default
-- gRPC services only if a boundary proves worth splitting out
+- Anvil by default for local execution
+- chain backend stays swappable
+- gRPC only if a boundary earns it
 
-## Versions
-
-### v1
-First release.
-
-- submit bundle
-- validate request
-- queue work
-- simulate on Anvil
-- score result
-- persist outcome
-- audit and observe
-
-### v2
-Second release.
-
-- auth
-- request signing
-- rate limiting
-- idempotency
-- bounded queues and backpressure
-- metrics, logs, and alerts
-- configurable backend
-
-### v3
-Third release.
-
-- stronger security
-- replayability
-- backup and restore
-- load and soak testing
-- incident playbooks
-- privacy controls
-
-### v4
-Fourth release.
-
-- customer-specific policy
-- support and escalation
-- pricing and unit economics
-- retention
-- compliance
-
-## Docs
+## Current docs
 
 - [v1 README](v1/README.md)
 - [v1 Lookahead](v1/lookahead.md)
