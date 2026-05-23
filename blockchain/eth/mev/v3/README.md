@@ -1,18 +1,36 @@
 # MEV Relay v3
 
-v3 is the mainnet-grade distributed control plane for the MEV relay.
-
-It is designed for hostile conditions, shard-local authority, conservative interpretation, and deterministic recovery. It is not a microservice mesh. It is a public ETH MEV relay with a distributed internal control model.
+v3 is the mainnet-grade distributed control plane for the MEV relay. It is a public ETH MEV relay with shard-local authority, conservative admission, and deterministic recovery.
 
 ## Purpose
 
-v3 exists to ensure that the relay:
+v3 ensures the relay:
 - stays compatible with the wider ETH MEV relay surface
 - rejects unsafe or stale work cheaply
 - preserves value under deadline pressure
 - avoids split-brain authority
-- recovers deterministically after failure
+- recovers deterministically
 - keeps audit evidence coherent
+
+## Design Decisions
+
+These are the defaults v3 is built around.
+
+| Question | Decision |
+|---|---|
+| What is the shard key? | canonical bundle ID + network ID + target slot |
+| What owns work? | shard owns bundles; client, validator, region are metadata |
+| How is routing done? | rendezvous hashing over a fixed shard set |
+| How does authority work? | lease, epoch, fence token |
+| How long is a lease valid? | `5s` |
+| How often is it renewed? | every `1s` on the active owner |
+| What breaks authority? | expiry, transfer, failed renewal, failed health check, or superseding epoch |
+| What is the stale-writer rule? | reject every write that does not carry the current `(shard, epoch, fence token)` |
+| What is the retry rule? | max `3` retries, `500ms` base backoff, only while EV remains positive |
+| What is the chain rule? | conservative interpretation; fail closed on uncertainty |
+| What is the recovery rule? | snapshot + WAL + checkpoint replay, then re-fence |
+| What is the observability rule? | sampled Jaeger traces; bounded logs |
+| What is the status rule? | `409` for conflict/duplicate/wrong shard, `412` for stale preconditions, `503` for unsafe state |
 
 ## v2 vs v3
 
@@ -46,6 +64,75 @@ Baseline 24/7 cost target:
 - managed hot state: about `$350-$450/month`
 - excludes engineering, egress, and incident cost
 
+## Operating Envelope
+
+Runtime defaults and hard bounds.
+
+### Runtime defaults
+- `QUEUE_DEPTH=1024` per shard
+- `WORKER_COUNT=4` per shard
+- `MAX_RETRIES=3`
+- `RETRY_BACKOFF=500ms`
+- `LEASE_TTL=5s`
+- `LEASE_RENEW_INTERVAL=1s`
+- `REQUEST_TIMEOUT=2s`
+- `MAX_PAYLOAD_BYTES=256KiB`
+- `MAX_INFLIGHT_PER_CLIENT=20`
+- `HISTORY_LIMIT=256`
+- `STATE_RETENTION=24h`
+- `WAL_MAX_ENTRIES=2048`
+
+### Operating rules
+- queue age target is under `1s`
+- queue age at `1 slot` (`12s`) is hard unsafe
+- queue full is unsafe
+- stale authority is unsafe
+- chain-confidence below threshold is unsafe
+- retries stop when remaining expected value is non-positive
+- expensive work stays off the hot path
+- recovery must re-fence before rejoin
+
+### Capacity interpretation
+- a single instance is not the 100k/s answer
+- 100k/s requires partitioning or upstream load distribution
+- shard-local state, queueing, and authority are the first scaling boundary
+- Valkey / Memorystore, NATS, and the worker pool are bottlenecks
+
+## Operational States
+
+v3 exposes four operator-visible states.
+
+| State | Trigger | Operator meaning |
+|---|---|---|
+| Ready | authority current, queue age under target, confidence above threshold | safe to accept bounded new work |
+| Degraded | pressure rising but still bounded | accept only if the shard can still clear value |
+| Unsafe | authority stale, queue full, confidence below threshold, or recovery inconsistent | stop accepting new work |
+| Draining | operator shutdown or handoff | finish in-flight work, seal state, release authority |
+
+### Ready conditions
+- authority lease is valid
+- fence token matches current epoch
+- queue age is under `1s`
+- retry debt is within budget
+- chain confidence is above threshold
+- audit path is healthy
+- recovery is idle or cleanly quarantined
+
+### Unsafe conditions
+- stale or missing authority
+- queue full
+- queue age at or beyond `1 slot` (`12s`)
+- chain confidence below threshold
+- checkpoint or replay inconsistency
+- audit divergence
+- retry amplification beyond cap
+
+### Drain conditions
+- scheduled rollout
+- failover handoff
+- operator shutdown
+- region or shard migration
+
 ## Public surfaces
 
 v3 must remain compatible with the standard ETH MEV relay shape:
@@ -64,7 +151,7 @@ Core public endpoints:
 | `/relay/v1/builder/blocks` | builder block submission |
 | `/healthz` / `/readyz` | operational health and routing |
 
-The internal design may be distributed; the public contract must remain standard.
+The internal design may be distributed; the public contract stays standard.
 
 ## Architecture
 
@@ -73,12 +160,12 @@ flowchart TB
   subgraph Edge["Edge"]
     I["Ingress filter<br/>cheap reject, auth, size gate"]
     P["Prefilter<br/>duplicate probe, cache, Bloom optional"]
-    R["Shard router<br/>consistent or rendezvous hashing"]
+    R["Shard router<br/>rendezvous hashing over canonical bundle ID"]
     I --> P --> R
   end
 
   subgraph Authority["Shard Authority"]
-    A["Authority manager<br/>lease, epoch, fence"]
+    A["Authority manager<br/>acquire, renew, release, fence"]
     L["Lease table<br/>owner, expiry, token"]
     O["Ownership map<br/>shard, bundle, region"]
     A --> L
@@ -86,7 +173,7 @@ flowchart TB
   end
 
   subgraph Decision["Decision Plane"]
-    S["Admission scorer<br/>conservative EV, deadline, confidence"]
+    S["Admission scorer<br/>lower-bound EV, deadline, confidence"]
     Q["Per-shard priority queue<br/>bounded, deadline-aware"]
     F["Fence check<br/>reject stale writers"]
     S --> Q --> F
@@ -185,27 +272,6 @@ flowchart TB
 | Determinism | same evidence and epoch produce the same terminal truth |
 | Operability | clear health states, clear status codes, clear failover rules |
 
-## Operating envelope
-
-Runtime defaults:
-- `QUEUE_DEPTH=1024` per shard
-- `WORKER_COUNT=4` per shard
-- `MAX_RETRIES=3`
-- `RETRY_BACKOFF=500ms`
-- `REQUEST_TIMEOUT=2s`
-- `MAX_PAYLOAD_BYTES=256KiB`
-- `MAX_INFLIGHT_PER_CLIENT=20`
-- `HISTORY_LIMIT=256`
-- `STATE_RETENTION=24h`
-- `WAL_MAX_ENTRIES=2048`
-
-Rules:
-- queue age target: under `1s`
-- hard unsafe at `1 slot` (`12s`)
-- hard unsafe if queue is full or authority is stale
-- reject work that cannot finish within deadline slack
-- keep expensive work off the hot path
-
 ## DSA
 
 ### Live DSA
@@ -249,6 +315,9 @@ Rules:
 | rollout overlap | old and new code disagree | version fences and cutover windows |
 | chain-view uncertainty | wrong decision from partial truth | conservative interpretation and confidence gating |
 | observability overload | telemetry becomes the outage | sampling, bounded cardinality, no raw payloads by default |
+| stale authority | rejected writes or split-brain pressure | leases, renewals at `1s`, TTL `5s`, fenced writes |
+| recovery overlap | replay outranks live authority | re-fence before rejoin; quarantine until validated |
+| retry amplification | load and cost multiply on retries | retry cap `3`, `500ms` backoff, stop when EV goes non-positive |
 
 ## Status codes
 
@@ -295,10 +364,15 @@ Metrics must include:
 - decision rate
 - dead-letter rate
 
+Sampling rules:
+- always sample slow paths and failures
+- sample routine success paths
+- keep labels bounded
+- do not log raw payloads by default
+
 ## Economics
 
-This is a capitalized infrastructure asset with recurring operating cost.
-It is economically negative by default until value preservation or revenue is proven.
+This is a capitalized infrastructure asset with recurring operating cost. It is economically negative by default until value preservation or revenue is proven.
 
 ### Live cost structure
 
@@ -334,6 +408,19 @@ The economic test is:
 If `Net > 0`, the system is value-positive.
 If direct revenue is added later, it can become a profit center.
 
+### Live economics
+
+`ExpectedNet = ExpectedValue - DelayCost - ComputeCost - RetryCost - FailureRisk`
+
+Admission requires `ExpectedNet > 0` under current authority and chain confidence.
+
+Live rules:
+- reject stale work early
+- reject low-confidence work early
+- keep retries finite
+- sample observability
+- treat queue age as lost value
+
 ### Break-even view
 
 - `~$250/month` lean self-hosted baseline
@@ -341,6 +428,34 @@ If direct revenue is added later, it can become a profit center.
 - at `10,000` accepted bundles/month, infra-only break-even is roughly `$0.025-$0.035` per accepted bundle
 - at `100,000` accepted bundles/month, infra-only break-even is roughly `$0.0025-$0.0035` per accepted bundle
 - if the relay preserves more MEV value than it costs, it is justified even without direct fees
+
+### MEV usage economics
+
+v3 is justified by preserving value before the slot closes:
+- keep high-value bundles alive long enough to matter
+- reject stale or low-confidence bundles cheaply
+- do not spend state, CPU, or audit budget on negative-EV work
+- treat queue age as value decay
+- treat retries as a capped investment, not a right
+
+The live threshold is:
+
+`ValuePreserved + Revenue >= OperatingCost + CapitalCost + FailureLosses`
+
+### Live control points
+
+The live system should be governed by a small set of measurable controls:
+- queue age
+- queue depth
+- queue net value
+- retry debt
+- authority freshness
+- chain confidence
+- audit health
+- worker saturation
+
+If those controls stay inside bounds, the relay is preserving value.
+If they drift outside bounds, the relay is burning value and should shed load.
 
 ## Deployment checklist
 
@@ -354,6 +469,26 @@ If direct revenue is added later, it can become a profit center.
 - metrics and logs
 - public HTTPS relay edge
 - network-specific config for mainnet and Sepolia
+- health states wired to ready / degraded / unsafe / draining
+- lease and fence behavior tested under failover
+- replay and checkpoint validation tested under corruption
+- queue-age and retry-debt alerts configured
+- budget ceilings set for logs, traces, and storage
+
+## Launch gate
+
+v3 should not be promoted unless all of the following are true:
+- public relay APIs are compatible with mev-boost expectations
+- one shard has one authority at a time
+- stale writers are rejected on every write path
+- recovery re-fences before rejoin
+- queue age stays under target in stress tests
+- retry debt stays bounded under burst
+- chain confidence fails closed when stale or inconsistent
+- audit trails reconstruct the same terminal truth from checkpoint and event data
+- observability stays sampled under load
+- infra cost stays inside the expected operating envelope
+- rollouts can be drained and cut over without mixed authority
 
 ## Success criteria
 
