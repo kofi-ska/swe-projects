@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package simulator;
+
+option go_package = "mev-relay/internal/pb";
+
+service SimulationService {
+  rpc SimulateBundle (BundleRequest) returns (BundleResponse);
+}
+
+message BundleRequest {
+  string bundle_id = 1;
+  repeated string txs = 2;
+  string target_block = 3;
+}
+
+message BundleResponse {
+  string bundle_id = 1;
+  double profit_eth = 2;
+  int64 latency_ms = 3;
+  bool success = 4;
+  string reason = 5;
+}

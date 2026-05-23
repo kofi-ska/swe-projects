@@ -1,0 +1,94 @@
+services:
+  relay:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.relay
+    container_name: mev-relay
+    env_file: .env
+    ports:
+      - "8080:8080"
+    depends_on:
+      - simulator
+      - builder
+      - timescaledb
+      - geth
+    networks:
+      - mevnet
+
+  simulator:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.simulator
+    container_name: mev-simulator
+    env_file: .env
+    ports:
+      - "50051:50051"
+    depends_on:
+      - geth
+    networks:
+      - mevnet
+
+  builder:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.builder
+    container_name: mev-builder
+    env_file: .env
+    ports:
+      - "50052:50052"
+    depends_on:
+      - timescaledb
+    networks:
+      - mevnet
+
+  timescaledb:
+    image: timescale/timescaledb:2.15.1-pg16
+    container_name: timescaledb
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mevrelay
+    ports:
+      - "5432:5432"
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./scripts/migrate.sql:/docker-entrypoint-initdb.d/migrate.sql
+    networks:
+      - mevnet
+
+  superset:
+    build:
+      context: .
+      dockerfile: ./docker/Dockerfile.superset
+    container_name: mev-superset
+    environment:
+      SUPERSET_SECRET_KEY: "relay_secret"
+    ports:
+      - "8088:8088"
+    depends_on:
+      - timescaledb
+    networks:
+      - mevnet
+
+  geth:
+    build:
+      context: .
+      dockerfile: ./docker/anvil/Dockerfile
+    container_name: mev-geth
+    environment:
+      CHAIN_NAME: "geth-local"
+      CHAIN_ID: 1337
+      PORT: 8545
+      BLOCK_TIME: 2
+    ports:
+      - "8545:8545"
+    networks:
+      - mevnet
+
+
+volumes:
+  timescaledb_data:
+
+networks:
+  mevnet:
+    driver: bridge

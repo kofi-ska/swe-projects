@@ -1,0 +1,10 @@
+FROM apache/superset:3.1.0
+
+USER root
+WORKDIR /app
+
+# Copy setup script
+COPY scripts/setup_superset.sh /docker-entrypoint-initdb.d/setup_superset.sh
+RUN chmod +x /docker-entrypoint-initdb.d/setup_superset.sh
+
+EXPOSE 8088

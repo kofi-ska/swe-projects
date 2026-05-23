@@ -1,0 +1,38 @@
+### 1. Relay — Submit Bundle (Searcher → Relay)
+POST http://localhost:8080/relay/v1/bundle
+Content-Type: application/json
+
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "eth_sendBundle",
+  "params": [{
+    "txs": [
+      "0x02f8a3018504a817c80082520894abc123...01",
+      "0x02f8b3018504a817c80082520894def456...02"
+    ],
+    "blockNumber": "0x12A3B4",
+    "minTimestamp": 1729000000,
+    "maxTimestamp": 1729000300
+  }]
+}
+
+###
+
+### 2. Simulator — Direct gRPC Health Check via HTTP Gateway (optional)
+# Only works if you expose a JSON-RPC proxy or add a REST stub; otherwise skip.
+GET http://localhost:50051/healthz
+
+###
+
+### 3. Builder — gRPC Health Check via HTTP Gateway (optional)
+GET http://localhost:50052/healthz
+
+
+
+
+
+###
+
+### 5. Superset — Web UI Access
+GET http://localhost:8088/

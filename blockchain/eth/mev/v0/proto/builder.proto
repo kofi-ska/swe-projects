@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package builder;
+
+option go_package = "mev-relay/internal/pb";
+
+service BuilderService {
+  rpc SubmitBundle (BundleSubmission) returns (BuildResult);
+}
+
+message BundleSubmission {
+  string bundle_id = 1;
+  double profit_eth = 2;
+  repeated string txs = 3;
+}
+
+message BuildResult {
+  string block_hash = 1;
+  bool included = 2;
+  string inclusion_reason = 3;
+  int64 inclusion_latency_ms = 4;
+}
