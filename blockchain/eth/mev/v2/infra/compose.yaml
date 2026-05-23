@@ -1,0 +1,63 @@
+services:
+  valkey:
+    image: valkey/valkey:8-alpine
+    command: ["valkey-server", "--appendonly", "yes", "--dir", "/data"]
+    volumes:
+      - valkey-data:/data
+    ports:
+      - "6379:6379"
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    command: ["anvil", "--host", "0.0.0.0", "--port", "8545"]
+    ports:
+      - "8545:8545"
+
+  relay:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      HTTP_ADDR: ":8090"
+      DATA_DIR: "/data"
+      REGION_ID: "local"
+      BACKEND_KIND: "anvil"
+      BACKEND_URL: "http://anvil:8545"
+      STATE_KIND: "valkey"
+      VALKEY_URL: "redis://valkey:6379"
+      BROKER_KIND: "nats"
+      BROKER_BUFFER: "256"
+      BROKER_TOPIC: "mev.v2.events"
+      NATS_URL: "nats://nats:4222"
+      AUDIT_FLUSH_EVERY: "256"
+      WAL_MAX_ENTRIES: "2048"
+      HISTORY_LIMIT: "256"
+      STATE_RETENTION: "24h"
+    volumes:
+      - relay-data:/data
+    ports:
+      - "8090:8090"
+    depends_on:
+      - valkey
+      - nats
+      - anvil
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.103.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+
+volumes:
+  relay-data:
+  valkey-data:
