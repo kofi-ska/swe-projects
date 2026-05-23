@@ -195,6 +195,44 @@ Values are deployment-specific. The control points are fixed.
 - retry schedule entry
 - broker topic or stream
 
+## DSA
+
+### Commitments
+
+- Merkle trees for batch commitments
+- signed checkpoints for batch verification
+
+### Replay
+
+- append-only logs / WALs for replay
+- snapshot state for recovery
+
+### Identity and dedupe
+
+- hash maps for dedupe and idempotency
+- exact membership checks keyed by bundle hash or idempotency key
+
+### Retry scheduling
+
+- priority queues for retry deadlines
+- bounded retry windows and retry counts
+
+### Dispatch
+
+- bounded queues / ring buffers for work dispatch
+- fixed worker pools for bounded concurrency
+
+### Graph safety
+
+- topological sort for batch/event ordering
+- reachability checks for valid recovery paths
+- strongly connected component checks for retry loops
+
+### Throughput analysis
+
+- min-cut reasoning for bottlenecks
+- flow reasoning for queue, worker, and broker capacity
+
 ## Algorithms
 
 ### Admission
@@ -417,7 +455,7 @@ flowchart TB
 - relying on Merkle trees for hot-path correctness
 - turning throughput work into a platform rewrite
 
-## Exit criteria
+## Success criteria
 
 - every bundle state change is recorded as an event
 - event batches can be committed and verified

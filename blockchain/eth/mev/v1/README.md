@@ -57,9 +57,11 @@ v1 proves the relay loop under bounded adversarial load:
 - simplicity: the system stays understandable in one codebase
 - feasibility: the design fits Docker Compose and Anvil-first execution
 - security: unauthorized or malformed input fails closed
+- trust boundaries: the HTTP edge owns transport identity; internal calls do not accept caller-supplied identity as auth
 - privacy: bundle contents do not leak into logs or traces
 - observability: state, latency, and failure mode are visible
 - operability: failures are recoverable by an operator without guesswork
+- health: `/healthz` and `/readyz` report healthy, degraded, or unsafe state explicitly
 - performance: hot-path work stays within explicit time budgets
 
 ## Formal Model
@@ -304,6 +306,14 @@ flowchart LR
 - recoverability: restart does not invalidate terminal records
 - containment: failure in one component does not corrupt the lifecycle
 
+## Health Model
+
+- `healthy`: store and backend are reachable, and the queue has headroom
+- `degraded`: the relay is operating, but queue pressure is elevated
+- `unsafe`: the relay must not accept work because a critical dependency is down or the queue is full
+- `/healthz` returns the current health report
+- `/readyz` fails closed when the report is `unsafe`
+
 ## Race Model
 
 ```mermaid
@@ -515,6 +525,7 @@ Expected:
 
 - tracking ID is assigned once
 - duplicate handling is consistent
+- transport identity is derived at the HTTP edge, not from a caller-supplied field
 - idempotency behavior is defined
 - stored records can be correlated with logs and metrics
 
