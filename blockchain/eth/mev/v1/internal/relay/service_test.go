@@ -61,13 +61,13 @@ func newTestService(t *testing.T, queueDepth, workers, retries int, mode string)
 		t.Fatal(err)
 	}
 	svc := New(config.Config{
-		QueueDepth:            queueDepth,
-		WorkerCount:           workers,
-		MaxRetries:            retries,
-		RetryBackoff:          5 * time.Millisecond,
-		MaxInFlightPerClient:  10,
-		MaxPayloadBytes:       256 * 1024,
-		RequestTimeout:        200 * time.Millisecond,
+		QueueDepth:           queueDepth,
+		WorkerCount:          workers,
+		MaxRetries:           retries,
+		RetryBackoff:         5 * time.Millisecond,
+		MaxInFlightPerClient: 10,
+		MaxPayloadBytes:      256 * 1024,
+		RequestTimeout:       200 * time.Millisecond,
 	}, st, &mockBackend{mode: mode}, &metrics.Metrics{})
 	svc.Start(ctx)
 	return svc, st, func() {
@@ -108,7 +108,7 @@ func TestSubmitAndProcessSuccess(t *testing.T) {
 		}},
 	}
 
-	rec, err := svc.Submit(context.Background(), req, "client-a")
+	rec, err := svc.submitWithIdentity(context.Background(), req, "client-a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestQueueOverflowRejects(t *testing.T) {
 			BlockNumber: "0x1",
 		}},
 	}
-	rec, err := svc.Submit(context.Background(), req, "client-a")
+	rec, err := svc.submitWithIdentity(context.Background(), req, "client-a")
 	if err == nil {
 		t.Fatalf("expected queue overflow")
 	}
@@ -165,7 +165,7 @@ func TestRetryThenSuccess(t *testing.T) {
 		}},
 	}
 
-	rec, err := svc.Submit(context.Background(), req, "client-b")
+	rec, err := svc.submitWithIdentity(context.Background(), req, "client-b")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestRetryExhaustionDeadLetter(t *testing.T) {
 		}},
 	}
 
-	rec, err := svc.Submit(context.Background(), req, "client-b")
+	rec, err := svc.submitWithIdentity(context.Background(), req, "client-b")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,11 +227,11 @@ func TestDuplicateSubmissionRejected(t *testing.T) {
 			BlockNumber: "0x1",
 		}},
 	}
-	_, err := svc.Submit(context.Background(), req, "client-c")
+	_, err := svc.submitWithIdentity(context.Background(), req, "client-c")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = svc.Submit(context.Background(), req, "client-c")
+	_, err = svc.submitWithIdentity(context.Background(), req, "client-c")
 	if err == nil {
 		t.Fatalf("expected duplicate rejection")
 	}
@@ -249,7 +249,7 @@ func TestInvalidRequestRejected(t *testing.T) {
 	}
 
 	for i, req := range cases {
-		if _, err := svc.Submit(context.Background(), req, "client-z"); err == nil {
+		if _, err := svc.submitWithIdentity(context.Background(), req, "client-z"); err == nil {
 			t.Fatalf("case %d: expected rejection", i)
 		}
 	}
@@ -269,7 +269,7 @@ func TestClientInflightLimitRejects(t *testing.T) {
 			BlockNumber: "0x1",
 		}},
 	}
-	rec, err := svc.Submit(context.Background(), req, "client-limit")
+	rec, err := svc.submitWithIdentity(context.Background(), req, "client-limit")
 	if err == nil {
 		t.Fatalf("expected inflight limit rejection")
 	}
@@ -302,7 +302,7 @@ func TestConcurrentSubmissions(t *testing.T) {
 					BlockNumber: "0x1",
 				}},
 			}
-			rec, err := svc.Submit(context.Background(), req, "client-x-"+string(rune('a'+i)))
+			rec, err := svc.submitWithIdentity(context.Background(), req, "client-x-"+string(rune('a'+i)))
 			if err != nil {
 				t.Errorf("submit %d: %v", i, err)
 				return

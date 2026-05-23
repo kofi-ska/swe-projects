@@ -29,6 +29,53 @@ func TestHTTPHandlers(t *testing.T) {
 		}
 	})
 
+	t.Run("health exposes degraded state", func(t *testing.T) {
+		degradedSvc, _, cancelDegraded := newTestService(t, 5, 0, 1, "ok")
+		defer cancelDegraded()
+		degradedHandler := Handler{Svc: degradedSvc}
+
+		body := map[string]interface{}{
+			"jsonrpc": "2.0",
+			"id":      31,
+			"method":  "eth_sendBundle",
+			"params": []map[string]interface{}{
+				{
+					"txs":          []string{"0x1"},
+					"blockNumber":  "0x1",
+					"minTimestamp": 0,
+					"maxTimestamp": 0,
+				},
+			},
+		}
+		for i := 0; i < 4; i++ {
+			body["id"] = 31 + i
+			payload, _ := json.Marshal(body)
+			req := httptest.NewRequest(http.MethodPost, "/relay/v1/bundle", bytes.NewReader(payload))
+			rr := httptest.NewRecorder()
+			degradedHandler.ServeHTTP(rr, req)
+			if rr.Code != http.StatusAccepted {
+				t.Fatalf("expected accepted submit, got %d", rr.Code)
+			}
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		rr := httptest.NewRecorder()
+		degradedHandler.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200 for degraded health, got %d", rr.Code)
+		}
+		var report struct {
+			State string `json:"state"`
+			Ready bool   `json:"ready"`
+		}
+		if err := json.NewDecoder(rr.Body).Decode(&report); err != nil {
+			t.Fatal(err)
+		}
+		if report.State != string(HealthStateDegraded) || !report.Ready {
+			t.Fatalf("expected degraded and ready, got %+v", report)
+		}
+	})
+
 	t.Run("invalid json rejected", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/relay/v1/bundle", strings.NewReader("{"))
 		rr := httptest.NewRecorder()
@@ -59,7 +106,7 @@ func TestHTTPHandlers(t *testing.T) {
 			"method":  "eth_sendBundle",
 			"params": []map[string]interface{}{
 				{
-					"txs":         []string{"0x1", "0x2"},
+					"txs":          []string{"0x1", "0x2"},
 					"blockNumber":  "0x1",
 					"minTimestamp": 0,
 					"maxTimestamp": 0,
@@ -68,7 +115,6 @@ func TestHTTPHandlers(t *testing.T) {
 		}
 		payload, _ := json.Marshal(body)
 		req := httptest.NewRequest(http.MethodPost, "/relay/v1/bundle", bytes.NewReader(payload))
-		req.Header.Set("X-Client-ID", "client-http")
 		req.RemoteAddr = "10.0.0.1:4321"
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
@@ -90,7 +136,7 @@ func TestHTTPHandlers(t *testing.T) {
 		}
 
 		rec := waitForState(t, svc.store, id, model.StateCompleted, time.Second)
-		if rec.ClientID != "client-http@10.0.0.1" {
+		if rec.ClientID != "10.0.0.1" {
 			t.Fatalf("expected composite client identity, got %s", rec.ClientID)
 		}
 
@@ -130,7 +176,7 @@ func TestHTTPHandlers(t *testing.T) {
 			"method":  "eth_sendBundle",
 			"params": []map[string]interface{}{
 				{
-					"txs":         []string{"0x1"},
+					"txs":          []string{"0x1"},
 					"blockNumber":  "0x1",
 					"minTimestamp": 0,
 					"maxTimestamp": 0,
@@ -139,7 +185,6 @@ func TestHTTPHandlers(t *testing.T) {
 		}
 		payload, _ := json.Marshal(body)
 		submitReq := httptest.NewRequest(http.MethodPost, "/relay/v1/bundle", bytes.NewReader(payload))
-		submitReq.Header.Set("X-Client-ID", "client-ready")
 		submitRR := httptest.NewRecorder()
 		blockingHandler.ServeHTTP(submitRR, submitReq)
 		if submitRR.Code != http.StatusAccepted {
@@ -151,6 +196,16 @@ func TestHTTPHandlers(t *testing.T) {
 		blockingHandler.ServeHTTP(blockRR, blockReq)
 		if blockRR.Code != http.StatusServiceUnavailable {
 			t.Fatalf("expected not ready when queue is saturated, got %d", blockRR.Code)
+		}
+		var report struct {
+			State string `json:"state"`
+			Ready bool   `json:"ready"`
+		}
+		if err := json.NewDecoder(blockRR.Body).Decode(&report); err != nil {
+			t.Fatal(err)
+		}
+		if report.State != string(HealthStateUnsafe) || report.Ready {
+			t.Fatalf("expected unsafe and not ready, got %+v", report)
 		}
 	})
 
@@ -164,6 +219,16 @@ func TestHTTPHandlers(t *testing.T) {
 		downHandler.ServeHTTP(rr, req)
 		if rr.Code != http.StatusServiceUnavailable {
 			t.Fatalf("expected not ready when backend is down, got %d", rr.Code)
+		}
+		var report struct {
+			State string `json:"state"`
+			Ready bool   `json:"ready"`
+		}
+		if err := json.NewDecoder(rr.Body).Decode(&report); err != nil {
+			t.Fatal(err)
+		}
+		if report.State != string(HealthStateUnsafe) || report.Ready {
+			t.Fatalf("expected unsafe and not ready, got %+v", report)
 		}
 	})
 }

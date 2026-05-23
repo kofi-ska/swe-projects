@@ -78,22 +78,21 @@ func (s *Service) Stop() {
 	s.wg.Wait()
 }
 
-// Ready reports whether the store, backend, and queue are usable.
+// Ready reports whether the relay can safely accept work.
 func (s *Service) Ready(ctx context.Context) error {
-	if err := s.store.Health(ctx); err != nil {
-		return fmt.Errorf("store unhealthy: %w", err)
-	}
-	if err := s.backend.Ping(ctx); err != nil {
-		return fmt.Errorf("backend unhealthy: %w", err)
-	}
-	if cap(s.queue) > 0 && len(s.queue) >= cap(s.queue) {
-		return fmt.Errorf("queue saturated")
+	report := s.AssessHealth(ctx)
+	if !report.Ready {
+		return fmt.Errorf("relay unsafe: %v", report.Reasons)
 	}
 	return nil
 }
 
-// Submit validates, persists, and enqueues one bundle request.
-func (s *Service) Submit(ctx context.Context, req model.JSONRPCRequest, clientID string) (model.BundleRecord, error) {
+// Submit validates, persists, and enqueues one bundle request using an anonymous transport identity.
+func (s *Service) Submit(ctx context.Context, req model.JSONRPCRequest) (model.BundleRecord, error) {
+	return s.submitWithIdentity(ctx, req, "anonymous")
+}
+
+func (s *Service) submitWithIdentity(ctx context.Context, req model.JSONRPCRequest, clientID string) (model.BundleRecord, error) {
 	if req.JSONRPC != "" && req.JSONRPC != "2.0" {
 		return model.BundleRecord{}, fmt.Errorf("invalid jsonrpc version")
 	}
@@ -207,15 +206,15 @@ func (s *Service) process(ctx context.Context, id string) {
 
 	if err != nil {
 		s.metrics.SimulationFail.Add(1)
-			if retryable(err) && rec.RetryCount < s.cfg.MaxRetries {
-				if rec, err = s.store.Transition(ctx, id, model.StateSimulating, model.StateRetryPending, "transient failure"); err != nil {
-					s.clients.Dec(clientID)
-					return
-				}
-				if rec, err = s.store.UpdateRetryCount(ctx, id, rec.RetryCount+1); err != nil {
-					s.clients.Dec(clientID)
-					return
-				}
+		if retryable(err) && rec.RetryCount < s.cfg.MaxRetries {
+			if rec, err = s.store.Transition(ctx, id, model.StateSimulating, model.StateRetryPending, "transient failure"); err != nil {
+				s.clients.Dec(clientID)
+				return
+			}
+			if rec, err = s.store.UpdateRetryCount(ctx, id, rec.RetryCount+1); err != nil {
+				s.clients.Dec(clientID)
+				return
+			}
 			s.metrics.RetryPending.Add(1)
 			go s.scheduleRetry(rec.ID, rec.ClientID, rec.RetryCount)
 			return

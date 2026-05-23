@@ -25,7 +25,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && (r.URL.Path == "/relay/v1/bundle" || strings.HasPrefix(r.URL.Path, "/relay/v1/bundle/")):
 		h.status(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/healthz":
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		h.health(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/readyz":
 		h.ready(w, r)
 	case r.Method == http.MethodGet && r.URL.Path == "/metrics":
@@ -44,7 +44,7 @@ func (h Handler) submit(w http.ResponseWriter, r *http.Request) {
 
 	clientID := clientIdentity(r)
 
-	rec, err := h.Svc.Submit(r.Context(), req, clientID)
+	rec, err := h.Svc.submitWithIdentity(r.Context(), req, clientID)
 	if err != nil {
 		status := http.StatusBadRequest
 		if strings.Contains(err.Error(), "queue overflow") || strings.Contains(err.Error(), "client inflight limit") {
@@ -64,9 +64,9 @@ func (h Handler) submit(w http.ResponseWriter, r *http.Request) {
 		JSONRPC: "2.0",
 		ID:      req.ID,
 		Result: map[string]interface{}{
-			"bundle_id":   rec.ID,
-			"state":       rec.State,
-			"bundle_hash": rec.BundleHash,
+			"bundle_id":    rec.ID,
+			"state":        rec.State,
+			"bundle_hash":  rec.BundleHash,
 			"submitted_at": time.Now().UTC(),
 		},
 	})
@@ -75,11 +75,23 @@ func (h Handler) submit(w http.ResponseWriter, r *http.Request) {
 func (h Handler) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 250*time.Millisecond)
 	defer cancel()
-	if err := h.Svc.Ready(ctx); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not ready", "error": err.Error()})
+	report := h.Svc.AssessHealth(ctx)
+	if !report.Ready {
+		writeJSON(w, http.StatusServiceUnavailable, report)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (h Handler) health(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 250*time.Millisecond)
+	defer cancel()
+	report := h.Svc.AssessHealth(ctx)
+	status := http.StatusOK
+	if report.State == HealthStateUnsafe {
+		status = http.StatusServiceUnavailable
+	}
+	writeJSON(w, status, report)
 }
 
 func (h Handler) status(w http.ResponseWriter, r *http.Request) {
@@ -126,18 +138,11 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 }
 
 func clientIdentity(r *http.Request) string {
-	headerID := strings.TrimSpace(r.Header.Get("X-Client-ID"))
 	remote := remoteIP(r.RemoteAddr)
-	switch {
-	case headerID == "" && remote == "":
-		return "anonymous"
-	case headerID == "":
+	if remote != "" {
 		return remote
-	case remote == "":
-		return headerID
-	default:
-		return headerID + "@" + remote
 	}
+	return "anonymous"
 }
 
 func remoteIP(addr string) string {

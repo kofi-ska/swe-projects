@@ -8,16 +8,16 @@ import (
 
 // Config holds runtime settings and bounded resource limits.
 type Config struct {
-	HTTPAddr           string
-	RPCURL             string
-	DataDir            string
-	QueueDepth         int
-	WorkerCount        int
-	MaxRetries         int
-	RetryBackoff       time.Duration
-	MaxPayloadBytes    int64
+	HTTPAddr             string
+	RPCURL               string
+	DataDir              string
+	QueueDepth           int
+	WorkerCount          int
+	MaxRetries           int
+	RetryBackoff         time.Duration
+	MaxPayloadBytes      int64
 	MaxInFlightPerClient int
-	RequestTimeout     time.Duration
+	RequestTimeout       time.Duration
 }
 
 // Load reads configuration from the environment with safe defaults.
