@@ -65,23 +65,21 @@ func (s *Service) processRetry(ctx context.Context, id string) {
 	if err != nil || !ok {
 		return
 	}
-	if rec.State != model.StateRetryPending {
-		return
-	}
-	if rec.RetryCount >= s.cfg.MaxRetries {
-		_, _ = s.deadLetterBundle(ctx, id, model.StateRetryPending, "retry exhausted")
-		return
-	}
-	if _, err := s.state.TransitionBundle(ctx, id, model.StateRetryPending, model.StateQueued, "retry queued"); err != nil {
-		return
-	}
-	rec, _, err = s.state.GetBundle(ctx, id)
-	if err != nil {
-		return
-	}
-	if err := s.emitTransition(ctx, rec, model.StateRetryPending, model.StateQueued, "retry queued"); err != nil {
-		return
-	}
+		if rec.State != model.StateRetryPending {
+			return
+		}
+		if rec.RetryCount >= s.cfg.MaxRetries {
+			_, _ = s.deadLetterBundle(ctx, id, model.StateRetryPending, "retry exhausted")
+			return
+		}
+		updated, err := s.state.TransitionBundle(ctx, id, model.StateRetryPending, model.StateQueued, "retry queued")
+		if err != nil {
+			return
+		}
+		rec = updated
+		if err := s.emitTransition(ctx, rec, model.StateRetryPending, model.StateQueued, "retry queued"); err != nil {
+			return
+		}
 	now := time.Now().UTC()
 	if !rec.DeadlineAt.IsZero() && now.After(rec.DeadlineAt) {
 		_, _ = s.deadLetterBundle(ctx, id, model.StateQueued, "retry expired")
@@ -102,6 +100,7 @@ func (s *Service) processRetry(ctx context.Context, id string) {
 		Reason:            "retry queued",
 	})
 	if pushErr != nil || !accepted {
+		s.metrics.IncQueueOverflow()
 		_, _ = s.deadLetterBundle(ctx, id, model.StateQueued, "retry queue overflow")
 		return
 	}
@@ -134,37 +133,37 @@ func (s *Service) process(ctx context.Context, item scheduler.Item) {
 		return
 	}
 
-	if _, err := s.state.TransitionBundle(ctx, rec.ID, model.StateQueued, model.StateSimulating, "picked"); err != nil {
-		return
-	}
-	rec, _, err = s.state.GetBundle(ctx, item.ID)
-	if err != nil {
-		return
-	}
-	if err := s.emitTransition(ctx, rec, model.StateQueued, model.StateSimulating, "picked"); err != nil {
-		return
-	}
+		updated, err := s.state.TransitionBundle(ctx, rec.ID, model.StateQueued, model.StateSimulating, "picked")
+		if err != nil {
+			return
+		}
+		rec = updated
+		if err := s.emitTransition(ctx, rec, model.StateQueued, model.StateSimulating, "picked"); err != nil {
+			return
+		}
 
 	simCtx, cancel := context.WithTimeout(ctx, s.cfg.RequestTimeout)
 	defer cancel()
 	result, err := s.backend.Simulate(simCtx, rec)
 
 	if err != nil {
+		s.metrics.IncBackendError()
 		if retryable(err) && rec.RetryCount+1 <= s.cfg.MaxRetries {
-			if _, err := s.state.TransitionBundle(ctx, rec.ID, model.StateSimulating, model.StateRetryPending, "transient failure"); err != nil {
-				return
-			}
-			rec, _, err = s.state.GetBundle(ctx, rec.ID)
+			rec, err = s.state.TransitionBundle(ctx, rec.ID, model.StateSimulating, model.StateRetryPending, "transient failure")
 			if err != nil {
 				return
 			}
 			if err := s.emitTransition(ctx, rec, model.StateSimulating, model.StateRetryPending, "transient failure"); err != nil {
 				return
 			}
-			if _, err := s.state.UpdateRetryCount(ctx, rec.ID, rec.RetryCount+1); err != nil {
+			rec, err = s.state.UpdateRetryCount(ctx, rec.ID, rec.RetryCount+1)
+			if err != nil {
 				return
 			}
-			if err := s.scheduleRetry(ctx, rec.ID, rec.RetryCount+1); err != nil {
+			s.metrics.IncRetryPending()
+			s.metrics.IncRetryScheduled()
+			if err := s.scheduleRetry(ctx, rec.ID, rec.RetryCount); err != nil {
+				s.metrics.IncTerminalError()
 				_, _ = s.deadLetterBundle(ctx, rec.ID, model.StateRetryPending, "retry schedule failed")
 				return
 			}
@@ -174,10 +173,7 @@ func (s *Service) process(ctx context.Context, item scheduler.Item) {
 		return
 	}
 
-	if _, err := s.state.TransitionBundle(ctx, rec.ID, model.StateSimulating, model.StateSimulated, result.Reason); err != nil {
-		return
-	}
-	rec, _, err = s.state.GetBundle(ctx, rec.ID)
+	rec, err = s.state.TransitionBundle(ctx, rec.ID, model.StateSimulating, model.StateSimulated, result.Reason)
 	if err != nil {
 		return
 	}
@@ -185,10 +181,7 @@ func (s *Service) process(ctx context.Context, item scheduler.Item) {
 		return
 	}
 
-	if _, err := s.state.TransitionBundle(ctx, rec.ID, model.StateSimulated, model.StateScored, "scored"); err != nil {
-		return
-	}
-	rec, _, err = s.state.GetBundle(ctx, rec.ID)
+	rec, err = s.state.TransitionBundle(ctx, rec.ID, model.StateSimulated, model.StateScored, "scored")
 	if err != nil {
 		return
 	}
@@ -202,20 +195,18 @@ func (s *Service) process(ctx context.Context, item scheduler.Item) {
 		action = model.StateForwarded
 		terminalReason = "score accepted"
 	}
-	if _, err := s.state.TransitionBundle(ctx, rec.ID, model.StateScored, action, terminalReason); err != nil {
-		return
-	}
-	rec, _, err = s.state.GetBundle(ctx, rec.ID)
+	rec, err = s.state.TransitionBundle(ctx, rec.ID, model.StateScored, action, terminalReason)
 	if err != nil {
 		return
 	}
 	if err := s.emitTransition(ctx, rec, model.StateScored, action, terminalReason); err != nil {
 		return
 	}
-	if _, err := s.state.UpdateResult(ctx, rec.ID, result.Score, result.ProfitEth, terminalReason); err != nil {
+	rec, err = s.state.UpdateResult(ctx, rec.ID, result.Score, result.ProfitEth, terminalReason)
+	if err != nil {
 		return
 	}
-	if err := s.finishTerminal(ctx, rec.ID, action, terminalReason); err != nil {
+	if _, err := s.finishTerminal(ctx, rec, action, terminalReason); err != nil {
 		return
 	}
 }

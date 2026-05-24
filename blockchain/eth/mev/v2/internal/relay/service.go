@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"mevrelayv2/internal/backend"
@@ -13,6 +14,7 @@ import (
 	"mevrelayv2/internal/model"
 	"mevrelayv2/internal/scheduler"
 	coordstate "mevrelayv2/internal/state"
+	"mevrelayv2/internal/telemetry"
 )
 
 // Service coordinates submission, eventing, and bounded processing.
@@ -24,6 +26,8 @@ type Service struct {
 	state   coordstate.Store
 
 	queue    *scheduler.Queue
+	metrics  *telemetry.Metrics
+	draining atomic.Bool
 	stopCh   chan struct{}
 	stopOnce sync.Once
 	wg       sync.WaitGroup
@@ -38,6 +42,7 @@ func New(cfg config.Config, be backend.Adapter, br broker.Broker, st coordstate.
 		wal:     wal,
 		state:   st,
 		queue:   scheduler.New(cfg.QueueDepth),
+		metrics: telemetry.New(),
 		stopCh:  make(chan struct{}),
 	}
 }
@@ -66,10 +71,16 @@ func (s *Service) Start(ctx context.Context) {
 // Stop terminates workers and waits for them to exit.
 func (s *Service) Stop() {
 	s.stopOnce.Do(func() {
+		s.draining.Store(true)
 		close(s.stopCh)
 		s.queue.Close()
 	})
 	s.wg.Wait()
+}
+
+// Drain marks the relay as draining and stops new admissions.
+func (s *Service) Drain() {
+	s.draining.Store(true)
 }
 
 // Ready reports whether the relay can safely accept work.
@@ -77,6 +88,9 @@ func (s *Service) Ready(ctx context.Context) error {
 	report := s.AssessHealth(ctx)
 	if !report.Ready {
 		return fmt.Errorf("relay unsafe: %v", report.Reasons)
+	}
+	if s.draining.Load() {
+		return fmt.Errorf("relay draining")
 	}
 	return nil
 }
@@ -87,6 +101,10 @@ func (s *Service) Submit(ctx context.Context, req model.JSONRPCRequest) (model.B
 }
 
 func (s *Service) submitWithIdentity(ctx context.Context, req model.JSONRPCRequest, clientID, regionID string) (model.BundleRecord, error) {
+	s.metrics.IncSubmitted()
+	if s.draining.Load() {
+		return model.BundleRecord{}, ErrQueueDisabled
+	}
 	if err := validateBundleRequest(req); err != nil {
 		return model.BundleRecord{}, err
 	}
@@ -115,6 +133,9 @@ func (s *Service) submitWithIdentity(ctx context.Context, req model.JSONRPCReque
 	var err error
 	rec, err = s.state.CreateBundle(ctx, rec)
 	if err != nil {
+		if err == coordstate.ErrDuplicateBundle {
+			s.metrics.IncDuplicate()
+		}
 		return rec, err
 	}
 
@@ -127,10 +148,12 @@ func (s *Service) submitWithIdentity(ctx context.Context, req model.JSONRPCReque
 	}
 
 	if !decision.accepted {
+		s.metrics.IncRejected()
 		return s.rejectBundle(ctx, rec.ID, model.StateValidated, decision.reason)
 	}
 
 	if _, err := s.state.ReserveInflight(ctx, clientID, s.cfg.MaxInFlightPerClient); err != nil {
+		s.metrics.IncInflightLimit()
 		return s.rejectBundle(ctx, rec.ID, model.StateValidated, "client inflight limit")
 	}
 
@@ -145,17 +168,19 @@ func (s *Service) submitWithIdentity(ctx context.Context, req model.JSONRPCReque
 		Reason:            "admitted",
 	})
 	if err != nil || !accepted {
+		s.metrics.IncQueueOverflow()
 		return s.rejectBundle(ctx, rec.ID, model.StateValidated, "queue overflow")
 	}
-	if evicted != nil {
-		if ev, ok, err := s.state.GetBundle(ctx, evicted.ID); err == nil && ok {
-			if _, terr := s.state.TransitionBundle(ctx, evicted.ID, model.StateQueued, model.StateRejected, "priority eviction"); terr == nil {
-				if err := s.emitTransition(ctx, ev, model.StateQueued, model.StateRejected, "priority eviction"); err == nil {
-					_ = s.finishTerminal(ctx, evicted.ID, model.StateRejected, "priority eviction")
+		s.metrics.IncAccepted()
+		if evicted != nil {
+			if _, ok, err := s.state.GetBundle(ctx, evicted.ID); err == nil && ok {
+				if evictedRec, terr := s.state.TransitionBundle(ctx, evicted.ID, model.StateQueued, model.StateRejected, "priority eviction"); terr == nil {
+					if err := s.emitTransition(ctx, evictedRec, model.StateQueued, model.StateRejected, "priority eviction"); err == nil {
+						_, _ = s.finishTerminal(ctx, evictedRec, model.StateRejected, "priority eviction")
+					}
 				}
 			}
 		}
-	}
 
 	rec, err = s.state.TransitionBundle(ctx, rec.ID, model.StateValidated, model.StateQueued, "queued")
 	if err != nil {

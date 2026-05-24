@@ -51,14 +51,20 @@ func Open(path string, flushEvery, maxEntries int) (*WAL, error) {
 // Append writes one entry to the log and forces it durable.
 func (w *WAL) Append(ctx context.Context, kind string, payload any) error {
 	_ = ctx
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return w.AppendEncoded(ctx, kind, body)
+}
+
+// AppendEncoded writes one pre-marshaled entry to the log and forces it durable.
+func (w *WAL) AppendEncoded(ctx context.Context, kind string, body []byte) error {
+	_ = ctx
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.file == nil {
 		return errors.New("wal closed")
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
 	}
 	entry := Entry{
 		Kind: kind,
@@ -77,7 +83,7 @@ func (w *WAL) Append(ctx context.Context, kind string, payload any) error {
 			return err
 		}
 	}
-	if w.writes > w.maxEntries {
+	if w.maxEntries > 0 && w.writes > w.maxEntries*2 {
 		if err := w.compactLocked(); err != nil {
 			return err
 		}

@@ -15,10 +15,10 @@ func (s *Service) settleBundle(ctx context.Context, id string, from, terminal mo
 	if err := s.emitTransition(ctx, rec, from, terminal, reason); err != nil {
 		return model.BundleRecord{}, err
 	}
-	if err := s.finishTerminal(ctx, id, terminal, reason); err != nil {
+	rec, err = s.finishTerminal(ctx, rec, terminal, reason)
+	if err != nil {
 		return model.BundleRecord{}, err
 	}
-	rec, _, err = s.state.GetBundle(ctx, id)
 	return rec, err
 }
 

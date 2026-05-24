@@ -26,17 +26,24 @@ func (s *Service) emitTransition(ctx context.Context, rec model.BundleRecord, fr
 		ClientID:   rec.ClientID,
 		RegionID:   rec.RegionID,
 	}
+	start := time.Now()
 	if err := s.state.AppendEvent(ctx, ev); err != nil {
+		s.metrics.IncStateError()
 		return err
 	}
-	if err := s.wal.Append(ctx, "event", ev); err != nil {
-		return err
-	}
+	s.metrics.ObserveStateLatency(time.Since(start))
 	body, err := json.Marshal(ev)
 	if err != nil {
 		return err
 	}
-	return s.broker.Publish(ctx, broker.Message{
+	start = time.Now()
+	if err := s.wal.AppendEncoded(ctx, "event", body); err != nil {
+		s.metrics.IncWALError()
+		return err
+	}
+	s.metrics.ObserveWALLatency(time.Since(start))
+	start = time.Now()
+	err = s.broker.Publish(ctx, broker.Message{
 		Topic:     s.cfg.BrokerTopic,
 		Key:       rec.ID,
 		Sequence:  ev.Sequence,
@@ -44,45 +51,39 @@ func (s *Service) emitTransition(ctx context.Context, rec model.BundleRecord, fr
 		Headers:   map[string]string{"kind": "event"},
 		Payload:   body,
 	})
+	s.metrics.ObserveBrokerLatency(time.Since(start))
+	return err
 }
 
-func (s *Service) finishTerminal(ctx context.Context, id string, terminal model.BundleState, reason string) error {
-	rec, ok, err := s.state.GetBundle(ctx, id)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return errors.New("bundle not found")
+func (s *Service) finishTerminal(ctx context.Context, rec model.BundleRecord, terminal model.BundleState, reason string) (model.BundleRecord, error) {
+	if rec.ID == "" {
+		return model.BundleRecord{}, errors.New("bundle not found")
 	}
 	defer func() {
 		_, _ = s.state.ReleaseInflight(ctx, rec.ClientID)
 	}()
-	_, err = s.state.TransitionBundle(ctx, id, terminal, model.StatePersisted, reason)
+	rec, err := s.state.TransitionBundle(ctx, rec.ID, terminal, model.StatePersisted, reason)
 	if err != nil {
-		return err
-	}
-	rec, _, err = s.state.GetBundle(ctx, id)
-	if err != nil {
-		return err
+		s.metrics.IncTerminalError()
+		return model.BundleRecord{}, err
 	}
 	if err := s.emitTransition(ctx, rec, terminal, model.StatePersisted, "persisted"); err != nil {
-		return err
+		s.metrics.IncBrokerError()
+		return model.BundleRecord{}, err
 	}
-	_, err = s.state.TransitionBundle(ctx, id, model.StatePersisted, model.StateCompleted, "completed")
+	rec, err = s.state.TransitionBundle(ctx, rec.ID, model.StatePersisted, model.StateCompleted, "completed")
 	if err != nil {
-		return err
-	}
-	rec, _, err = s.state.GetBundle(ctx, id)
-	if err != nil {
-		return err
+		s.metrics.IncTerminalError()
+		return model.BundleRecord{}, err
 	}
 	if err := s.emitTransition(ctx, rec, model.StatePersisted, model.StateCompleted, "completed"); err != nil {
-		return err
+		s.metrics.IncBrokerError()
+		return model.BundleRecord{}, err
 	}
 
-	events, err := s.state.ListEvents(ctx, id, s.cfg.HistoryLimit)
+	events, err := s.state.ListEvents(ctx, rec.ID, s.cfg.HistoryLimit)
 	if err != nil {
-		return err
+		return model.BundleRecord{}, err
 	}
 	leaves := make([][]byte, 0, len(events))
 	for _, ev := range events {
@@ -91,8 +92,8 @@ func (s *Service) finishTerminal(ctx context.Context, id string, terminal model.
 	}
 	root := commitment.Root(leaves...)
 	cp := model.CheckpointRecord{
-		BatchID:    checkpointID(id, rec.Sequence),
-		BundleID:   id,
+		BatchID:    checkpointID(rec.ID, rec.Sequence),
+		BundleID:   rec.ID,
 		Root:       hex.EncodeToString(root[:]),
 		EventCount: len(events),
 		RegionID:   rec.RegionID,
@@ -101,30 +102,48 @@ func (s *Service) finishTerminal(ctx context.Context, id string, terminal model.
 		Time:       nowUTC(),
 		Version:    rec.Version,
 	}
+	start := time.Now()
 	if err := s.state.PutCheckpoint(ctx, cp); err != nil {
-		return err
+		s.metrics.IncStateError()
+		return model.BundleRecord{}, err
 	}
-	if err := s.wal.Append(ctx, "checkpoint", cp); err != nil {
-		return err
-	}
+	s.metrics.ObserveStateLatency(time.Since(start))
 	body, err := json.Marshal(cp)
 	if err != nil {
-		return err
+		return model.BundleRecord{}, err
 	}
+	start = time.Now()
+	if err := s.wal.AppendEncoded(ctx, "checkpoint", body); err != nil {
+		s.metrics.IncWALError()
+		return model.BundleRecord{}, err
+	}
+	s.metrics.ObserveWALLatency(time.Since(start))
+	start = time.Now()
 	if err := s.broker.Publish(ctx, broker.Message{
 		Topic:     s.cfg.BrokerTopic + ".checkpoint",
-		Key:       id,
+		Key:       rec.ID,
 		Sequence:  uint64(cp.Version),
 		Timestamp: cp.Time,
 		Headers:   map[string]string{"kind": "checkpoint"},
 		Payload:   body,
 	}); err != nil {
-		return err
+		s.metrics.IncBrokerError()
+		return model.BundleRecord{}, err
 	}
-	if err := s.state.DeleteEvents(ctx, id); err != nil {
-		return err
+	s.metrics.ObserveBrokerLatency(time.Since(start))
+	if err := s.state.DeleteEvents(ctx, rec.ID); err != nil {
+		s.metrics.IncStateError()
+		return model.BundleRecord{}, err
 	}
-	return nil
+	switch terminal {
+	case model.StateRejected:
+		s.metrics.IncRejected()
+	case model.StateDeadLetter:
+		s.metrics.IncDeadLetter()
+	case model.StateForwarded:
+		s.metrics.IncForwarded()
+	}
+	return rec, nil
 }
 
 func signature(root [32]byte, rec model.BundleRecord) []byte {

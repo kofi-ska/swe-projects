@@ -1,0 +1,83 @@
+groups:
+  - name: mevrelay-v2
+    rules:
+      - alert: MevRelayUnsafeHealth
+        expr: mevrelay_health_state == 4
+        for: 0m
+        labels:
+          severity: page
+        annotations:
+          summary: Relay is unsafe
+          action: Stop acceptance and investigate the failing dependency or queue condition.
+
+      - alert: MevRelayQueueAgeTooHigh
+        expr: mevrelay_queue_oldest_age_ms > 1500
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: Queue age is above target
+          action: Shed load, check backend latency, and drain stale work.
+
+      - alert: MevRelayQueueFull
+        expr: mevrelay_queue_depth >= mevrelay_queue_capacity
+        for: 0m
+        labels:
+          severity: page
+        annotations:
+          summary: Queue is full
+          action: Stop accepting new work and clear backlog.
+
+      - alert: MevRelayRetryDebtGrowing
+        expr: mevrelay_retry_pending_total > 0
+        for: 2m
+        labels:
+          severity: warn
+        annotations:
+          summary: Retry debt exists
+          action: Check backend stability and ensure retries are still economically valid.
+
+      - alert: MevRelayBackendDown
+        expr: mevrelay_backend_errors_total > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: Backend errors are occurring
+          action: Verify backend health and stop acceptance if simulation cannot be trusted.
+
+      - alert: MevRelayStateDown
+        expr: mevrelay_state_errors_total > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: State path is failing
+          action: Verify state backend, WAL, and checkpoint paths before re-enabling readiness.
+
+      - alert: MevRelayBrokerDown
+        expr: mevrelay_broker_errors_total > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: Broker path is failing
+          action: Verify transport fan-out and event publication before continuing.
+
+      - alert: MevRelayWALDown
+        expr: mevrelay_wal_errors_total > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: WAL path is failing
+          action: Treat the node as unsafe until durability is restored.
+
+      - alert: MevRelayMetricsSilent
+        expr: absent(mevrelay_submitted_total)
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: Metrics are silent
+          action: Verify the relay, scrape path, and exporter before trusting health.

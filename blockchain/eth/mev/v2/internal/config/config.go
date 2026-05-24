@@ -36,6 +36,7 @@ type Config struct {
 	ValuePerTx           float64
 	CostPerTx            float64
 	CostPerMS            float64
+	APIAuthToken         string
 }
 
 // Load reads runtime settings with conservative defaults.
@@ -69,6 +70,7 @@ func Load() Config {
 		ValuePerTx:           envFloat("VALUE_PER_TX", 1),
 		CostPerTx:            envFloat("COST_PER_TX", 0.25),
 		CostPerMS:            envFloat("COST_PER_MS", 0.01),
+		APIAuthToken:         env("API_AUTH_TOKEN", ""),
 	}
 }
 

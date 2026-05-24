@@ -40,6 +40,7 @@ services:
       WAL_MAX_ENTRIES: "2048"
       HISTORY_LIMIT: "256"
       STATE_RETENTION: "24h"
+      API_AUTH_TOKEN: ""
     volumes:
       - relay-data:/data
     ports:
@@ -48,6 +49,39 @@ services:
       - valkey
       - nats
       - anvil
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../docs/alerting-rules.yaml:/etc/prometheus/rules/alerting-rules.yaml:ro
+    ports:
+      - "9090:9090"
+    depends_on:
+      - relay
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    depends_on:
+      - alert-sink
+
+  alert-sink:
+    image: python:3.12-alpine
+    command: ["python", "/app/alert-sink.py"]
+    volumes:
+      - ./alert-sink.py:/app/alert-sink.py:ro
+    ports:
+      - "9094:9094"
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.103.0

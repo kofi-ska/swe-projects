@@ -1,6 +1,6 @@
 # MEV Relay v2
 
-v2 is a deadline-aware online knapsack with adversarial arrivals, stochastic service times, and coupled resource constraints. It keeps the v1 lifecycle, moves hot coordination state out of process, and bounds every history surface.
+Bounded relay. External state. Early stale-work rejection.
 
 ## Scope
 
@@ -28,40 +28,16 @@ v2 is a deadline-aware online knapsack with adversarial arrivals, stochastic ser
 
 ## Problem framing
 
-For each bundle, the relay estimates:
-- expected value if processed in time
-- processing cost
-- service time
-- deadline slack
-- resource demand
+Bundle admission uses a lower-bound estimate.
 
-The estimate is conservative. It is a lower bound, not an oracle.
+- inputs: value, cost, service time, deadline slack, resource demand
+- admit: positive net value and sufficient slack
+- reject: stale or low-value work
+- objective: maximize expected value under bounded CPU, memory, broker, Valkey, WAL, RPC, and slot time
 
-The relay admits and schedules work when the expected net value is positive and the work is still timely.
+## NFRs
 
-The objective is to maximize expected value under finite:
-- CPU
-- memory
-- broker capacity
-- Valkey capacity
-- WAL IO
-- backend RPC budget
-- slot time
-
-Formally:
-`maximize Σ(u_i x_i)` subject to deadline, queue, retry, and resource constraints.
-
-The control rule is:
-- accept fresh, valuable work
-- reject stale or low-value work
-- keep queues bounded
-- keep retries bounded
-- prefer short, high-value jobs when pressure rises
-- use a lower-bound value estimate, not a synthetic oracle
-
-## Non-functional requirements
-
-| NFR | What it means here | Default / bound |
+| NFR | Meaning | Default / bound |
 |---|---|---|
 | Boundedness | no unbounded queues, retries, or history scans | queue 1024, retries 3, history 256 |
 | Safety | invalid work dies early; failure is explicit | fail closed on ingress, queue, state, broker, WAL |
@@ -74,7 +50,7 @@ The control rule is:
 
 ## Operating envelope
 
-### Runtime defaults
+### Defaults
 - `QUEUE_DEPTH=1024`
 - `WORKER_COUNT=4`
 - `MAX_RETRIES=3`
@@ -90,17 +66,32 @@ The control rule is:
 - `BACKEND_URL=http://127.0.0.1:8545`
 
 ### Derived limits
-- effective retry window is bounded by retry count and backoff
+- retry window is bounded by retry count and backoff
 - per-instance throughput is bounded by `min(Cin, Csim, Cdb, Cout)`
-- bundle history visibility is bounded by `HISTORY_LIMIT`
+- history visibility is bounded by `HISTORY_LIMIT`
 - live state age is bounded by `STATE_RETENTION`
-- local WAL growth is bounded by `WAL_MAX_ENTRIES`
+- WAL growth is bounded by `WAL_MAX_ENTRIES`
 
 ### Production constraint model
-- a single instance is not the 100k/s answer
-- 100k/s requires horizontal partitioning or upstream load distribution
+- one instance is not the 100k/s answer
+- 100k/s needs horizontal partitioning or upstream load distribution
 - Valkey, NATS, and the worker pool are separate bottlenecks
-- if one bottleneck saturates, readiness becomes degraded or unsafe
+- one saturated bottleneck makes readiness degraded or unsafe
+
+## Quantitative model
+
+See [`docs/lifecycle-math.md`](./docs/lifecycle-math.md) for the lower-bound model.
+
+Short version:
+- `value = VALUE_PER_TX * (1 + ln(1 + txs)) * freshness`
+- `cost = service_ms * COST_PER_MS + txs * COST_PER_TX`
+- `accept` only when value stays above cost and the deadline still has slack
+- worst-case retry path is about `9.25s` before dead-letter at current defaults, before queue and persistence overhead
+- timeout-bound throughput floor is about `2 bundles/s` per instance
+- a full queue drains in about `512s` at that floor
+- state transitions reuse returned records instead of rereading after each hop
+- event and checkpoint bodies are encoded once per write path
+- WAL compaction stays off the common path until the log is well past the bound
 
 ## Infra
 
@@ -112,28 +103,36 @@ The local Compose stack includes:
 - an OTEL collector
 - a persistent volume for WAL and checkpoint data
 
-The compose path is the default local runtime. It exercises the brokered path and the external state path together.
+The relay also exposes:
+- `/healthz`
+- `/readyz`
+- `/metrics`
+
+Operational docs: [`docs/README.md`](./docs/README.md).
+Local compose includes Prometheus and Alertmanager for alert checks.
+Set `API_AUTH_TOKEN` to require a bearer token on submit.
+Compose is the default local runtime.
 
 ### Backend adapters
 The relay core talks to a backend adapter, not a concrete network.
 
 Supported modes:
-- `local` for deterministic in-process simulation
-- `anvil` for the default local Ethereum JSON-RPC backend
-- `sepolia` for live public testnet RPC
+- `local`: deterministic in-process simulation
+- `anvil`: default local Ethereum JSON-RPC backend
+- `sepolia`: live public testnet RPC
 
-Anvil is the default. Sepolia is opt-in through `BACKEND_KIND=sepolia` and a live RPC URL.
+Anvil is the default. Sepolia is opt-in through `BACKEND_KIND=sepolia`.
 
 ## Model
 
-v2 extends the v1 graphs.
+v2 graphs:
 
-- `G_life` bundle lifecycle
-- `G_event` append-only event graph
-- `G_commit` batch commitment graph
-- `G_region` region / trust boundaries
-- `G_fail` failure graph
-- `G_cap` capacity graph
+- `G_life`: bundle lifecycle
+- `G_event`: append-only event graph
+- `G_commit`: batch commitment graph
+- `G_region`: region / trust boundaries
+- `G_fail`: failure graph
+- `G_cap`: capacity graph
 
 `M2 = (G_life, G_event, G_commit, G_region, G_fail, G_cap, I, Gg)`
 
@@ -249,6 +248,13 @@ flowchart LR
 ### Dispatch
 - bounded queues / ring buffers for work dispatch
 - fixed worker pools for bounded concurrency
+
+## Operations
+
+- `/healthz` tells you if the node is healthy, degraded, or unsafe
+- `/readyz` fails closed when the node should not accept work
+- `/metrics` is the scrape target for alerts and dashboards
+- Prometheus and Alertmanager are wired in `infra/compose.yaml`
 - in-memory only for transient execution
 
 ### Graph safety

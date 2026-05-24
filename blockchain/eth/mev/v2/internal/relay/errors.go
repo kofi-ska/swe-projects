@@ -14,6 +14,8 @@ var (
 	ErrInvalidMethod        = errors.New("invalid method")
 	ErrMissingParams        = errors.New("missing params")
 	ErrMissingTxs           = errors.New("missing txs")
+	ErrMissingAuthorization = errors.New("missing authorization")
+	ErrInvalidAuthorization = errors.New("invalid authorization")
 	ErrDuplicateBundle      = errors.New("duplicate bundle")
 	ErrQueueClosed          = errors.New("queue closed")
 	ErrQueueDisabled        = errors.New("queue disabled")
@@ -35,6 +37,8 @@ func statusForError(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, coordstate.ErrDuplicateBundle):
 		return http.StatusConflict
+	case errors.Is(err, ErrMissingAuthorization), errors.Is(err, ErrInvalidAuthorization):
+		return http.StatusUnauthorized
 	case errors.Is(err, ErrInvalidJSONRPC), errors.Is(err, ErrInvalidMethod), errors.Is(err, ErrMissingParams), errors.Is(err, ErrMissingTxs):
 		return http.StatusBadRequest
 	case errors.Is(err, ErrStaleWork), errors.Is(err, ErrStaleDeadline), errors.Is(err, ErrInsufficientDeadline), errors.Is(err, ErrNegativeNetValue):
