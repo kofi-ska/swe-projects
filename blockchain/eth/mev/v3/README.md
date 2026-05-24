@@ -1,26 +1,26 @@
 # MEV Relay v3
 
-v3 is the mainnet-grade distributed control plane for the MEV relay. It preserves the public ETH MEV relay contract and moves authority, state, and recovery into a shard-local model.
+v3 is a shard-local MEV relay. It keeps the public ETH relay contract and moves routing, authority, state, recovery, and evidence behind shard ownership.
 
 ## Purpose
 
-- stay compatible with the wider ETH MEV relay surface
-- reject unsafe or stale work cheaply
+- keep the public ETH relay contract stable
+- reject stale or unsafe work early
 - preserve value under deadline pressure
-- avoid split-brain authority
-- recover deterministically
-- keep audit evidence coherent
+- keep one owner per shard
+- recover with fenced replay
+- keep evidence consistent
 
 ## Design defaults
 
 - shard key = canonical bundle ID + network ID + target slot
-- ownership = shard owns bundles; client/validator/region are metadata
+- ownership = shard owns bundles; client, validator, and region are metadata
 - routing = rendezvous hashing over a fixed shard set
 - authority = lease, epoch, fence token; lease TTL `5s`; renew every `1s`
-- retry rule = max `3`, `500ms` backoff, only while EV > 0
-- chain rule = conservative; fail closed on uncertainty
+- retry rule = max `3`, `500ms` backoff, only while expected value stays positive
+- chain rule = fail closed when the view is stale or inconsistent
 - recovery rule = snapshot + WAL + checkpoint replay, then re-fence
-- observability rule = sampled Jaeger traces; bounded logs
+- observability rule = sampled traces; bounded logs; bounded label sets
 
 ## Deployment model
 
@@ -83,17 +83,9 @@ Capacity:
 | `/healthz` / `/readyz` | operational health and routing |
 
 ## Architecture
-```mermaid
-flowchart LR
-I[Ingress]-->P[Prefilter]-->R[Router]-->A[Authority]-->S[Scorer]-->Q[Queue]-->W[Workers]-->X[Backend]
-S-->D[Dedupe]
-W-->E[Event log]-->M[Merkle]-->V[Evidence]
-V-->U[Recovery]
-N[Nomad]-->A
-N-->W
-N-->X
-J[Jaeger]---S
-```
+
+- architecture details: [`docs/architecture.md`](./docs/architecture.md)
+- operational index: [`docs/README.md`](./docs/README.md)
 
 ## NFRs
 
@@ -163,7 +155,7 @@ Offline:
 
 ## Economics
 
-v3 is a capitalized infrastructure asset with recurring operating cost. It is economically negative by default until value preservation or revenue is proven.
+v3 has recurring operating cost. It is negative by default until value preservation or revenue is proven.
 
 - compute: about `$245/month`; managed hot state: about `+$110/month`
 - storage: low tens/month; logging / trace: `0` while under free tiers; egress is variable
