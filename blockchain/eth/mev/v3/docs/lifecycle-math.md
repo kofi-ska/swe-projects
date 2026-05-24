@@ -1,17 +1,19 @@
 # Lifecycle Math
 
-Lower-bound model for v3. The queue, retry, and drain math come from v2. v3 adds lease renewal and re-fencing overhead.
+This is the lower-bound lifecycle model. Queueing, retry, and drain math come from the current v3 defaults. Lease renewal and re-fencing add extra cost on top.
 
 ## Symbols
 
-- `Qcap` = `QUEUE_DEPTH` = 1024
-- `W` = `WORKER_COUNT` = 4
-- `R` = `MAX_RETRIES` = 3
-- `B` = `RETRY_BACKOFF` = 500ms
-- `Treq` = `REQUEST_TIMEOUT` = 2s
-- `Qage` = target queue age = 1s
-- `Cin` = `MAX_INFLIGHT_PER_CLIENT` = 20
-- `H` = `HISTORY_LIMIT` = 256
+| Symbol | Value | Meaning |
+|---|---:|---|
+| `Qcap` | `1024` | queue depth per shard |
+| `W` | `4` | workers per shard |
+| `R` | `3` | retry cap |
+| `B` | `500ms` | retry backoff |
+| `Treq` | `2s` | request timeout |
+| `Qage` | `1s` | target queue age |
+| `Cin` | `20` | max inflight per client |
+| `H` | `256` | retained history |
 
 ## Admission
 
@@ -29,7 +31,7 @@ accept    = slack > MIN_DEADLINE_SLACK
          && net >= MIN_NET_VALUE
 ```
 
-The code rejects work when any check fails. This is a lower-bound admission model, not a proof of final outcome.
+The constants are policy values. The runtime must set them from config or rollout parameters, then verify them against measurement.
 
 ## Lifecycle
 
@@ -56,12 +58,7 @@ dead_letter -> persisted -> completed
 ```text
 attempts_max = R
 delay(k) = k * B
-```
-
-Retry loop poll interval:
-
-```text
-B / 2
+poll_interval = B / 2
 ```
 
 Worst-case elapsed time before dead-letter, ignoring queue delay and persistence overhead:
@@ -73,28 +70,28 @@ T_deadletter_max = R * Treq + sum(k * B for k=1..R) + B/2
 With defaults:
 
 ```text
-T_deadletter_max = 3 * 2s + (1+2+3) * 500ms + 250ms
+T_deadletter_max = 3 * 2s + (1 + 2 + 3) * 500ms + 250ms
                  = 9.25s
 ```
 
-This is the lower bound. Lease renewal, re-fencing, queue delay, and WAL work add more time.
+This is a lower bound. Queue delay, lease renewal, and WAL work add more time.
 
 ## Queue pressure
 
 ```text
-mu_total = W / E[Tsim]
+μ_total = W / E[Tsim]
 ```
 
 If simulation is timeout-bound:
 
 ```text
-mu_total ~= W / Treq = 4 / 2s = 2 bundles/s
+μ_total ~= W / Treq = 4 / 2s = 2 bundles/s
 ```
 
 Drain time from a full queue:
 
 ```text
-T_drain ~= Qcap / mu_total
+T_drain ~= Qcap / μ_total
 ```
 
 At the timeout-bound floor:
@@ -103,7 +100,7 @@ At the timeout-bound floor:
 1024 / 2 = 512s
 ```
 
-This is a single-shard floor. Shard-local authority adds overhead and must be measured separately.
+This is a single-shard floor. Shard authority adds overhead and must be measured.
 
 ## Stability
 

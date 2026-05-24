@@ -1,8 +1,8 @@
 # Testing
 
-This is the current test matrix implied by the v3 model.
+This is the test matrix implied by the v3 model.
 
-## Coverage
+## Required coverage
 
 - validation
 - admission
@@ -17,7 +17,9 @@ This is the current test matrix implied by the v3 model.
 - metrics rendering
 - alert rule evaluation
 
-## Concurrency tests
+## Required suites
+
+### Concurrency
 
 - concurrent writers on one shard
 - lease expiry during in-flight work
@@ -25,7 +27,7 @@ This is the current test matrix implied by the v3 model.
 - queue push/pop races
 - shutdown while work is active
 
-## Failure tests
+### Failure
 
 - backend timeout
 - backend outage
@@ -36,7 +38,7 @@ This is the current test matrix implied by the v3 model.
 - stale chain view
 - recovery mismatch
 
-## Load tests
+### Load
 
 - queue age under burst
 - retry debt under burst
@@ -44,10 +46,32 @@ This is the current test matrix implied by the v3 model.
 - drain time under full queue
 - shard hotspot behavior
 
-## Regression tests
+### Regression
 
 - public response codes
 - ready / unsafe / draining transitions
 - idempotent duplicate handling
 - alert rule thresholds
 - docs-backed operating envelope
+
+## Merge gate
+
+A change that touches the hot path should not merge unless:
+
+- the affected unit tests pass
+- the affected concurrency tests pass
+- the relevant failure tests pass
+- the relevant load test is run or updated
+- the public response codes are unchanged or intentionally versioned
+- the operating bounds in the docs still match the code
+
+## Release gate
+
+Before release:
+
+- recovery replay is tested
+- fence rejection is tested
+- stale authority is tested
+- queue saturation is tested
+- observability output is rendered
+- alert rules are evaluated

@@ -1,6 +1,6 @@
 # Recovery
 
-This is the current recovery path for a shard.
+This is the shard recovery path.
 
 ## Inputs
 
@@ -9,6 +9,17 @@ This is the current recovery path for a shard.
 - checkpoint index
 - append-only events
 - current lease / epoch / fence state
+
+## Required checkpoint fields
+
+- shard ID
+- epoch
+- event root
+- event count
+- last replayed offset
+- checkpoint signature
+
+If any of those are missing or do not match the replay result, the shard stays quarantined.
 
 ## Recovery order
 
@@ -21,9 +32,10 @@ This is the current recovery path for a shard.
 7. re-fence
 8. rejoin only after validation
 
-## Recovery constraints
+## Constraints
 
 - replay does not write into live authority
+- replay is idempotent with respect to checkpointed state
 - ambiguous recovery stays quarantined
 - checkpoints that do not match event history are rejected
 - quarantine clears only after the shard has a fresh authority token
@@ -31,7 +43,7 @@ This is the current recovery path for a shard.
 ## Failure cases and outcomes
 
 - corrupt checkpoint -> quarantine
-- truncated WAL -> recover only if the boundary is safe
+- truncated WAL -> recover only if the boundary is safe and the checkpoint root still matches
 - replay gap -> quarantine
 - stale epoch -> reject rejoin
 - mixed-version schema -> reject rejoin

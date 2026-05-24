@@ -1,56 +1,65 @@
 # MEV Relay v3
 
-v3 is a shard-local MEV relay. It keeps the public ETH relay contract and moves routing, authority, state, recovery, and evidence behind shard ownership.
+v3 is a shard-local MEV relay. The public ETH relay contract stays the same. Routing, authority, queueing, recovery, and evidence move behind shard ownership.
 
-## Purpose
+## What this repo describes
 
-- keep the public ETH relay contract stable
-- reject stale or unsafe work early
-- preserve value under deadline pressure
-- keep one owner per shard
-- recover with fenced replay
-- keep evidence consistent
+- a relay that rejects stale or unsafe work early
+- one owner per shard
+- bounded retry and queue behavior
+- fenced recovery and rejoin
+- append-only evidence for terminal decisions
+- a control stack that extends v2 with policy adaptation, controller separation, and a proof loop
 
-## Design defaults
+## Core model
 
-- shard key = canonical bundle ID + network ID + target slot
-- ownership = shard owns bundles; client, validator, and region are metadata
-- routing = rendezvous hashing over a fixed shard set
-- authority = lease, epoch, fence token; lease TTL `5s`; renew every `1s`
-- retry rule = max `3`, `500ms` backoff, only while expected value stays positive
-- chain rule = fail closed when the view is stale or inconsistent
-- recovery rule = snapshot + WAL + checkpoint replay, then re-fence
-- observability rule = sampled traces; bounded logs; bounded label sets
+- shard key: canonical bundle ID + network ID + target slot
+- ownership: a shard owns bundles; client, validator, and region are metadata
+- routing: rendezvous hashing over a fixed shard set
+- authority: lease, epoch, fence token
+- retry rule: max `3`, `500ms` backoff, only while expected value stays positive
+- chain rule: fail closed when the view is stale or inconsistent
+- recovery rule: snapshot + WAL + checkpoint replay, then re-fence
+- observability rule: sampled traces, bounded logs, bounded label sets
+- deployment uses OTLP to an OpenTelemetry Collector, then Jaeger for trace storage and UI
 
-## Deployment model
+## Runtime defaults
 
-- GCP infrastructure via Terraform
-- Nomad for orchestration and rollout
-- 1 active region by default
-- public HTTPS edge
-- Jaeger for traces
-- Cloud Storage for audit artifacts
-- Valkey or Memorystore for hot coordination state
-- baseline 24/7 cost: `$250-$300/month` self-hosted, `$350-$450/month` managed state, excluding engineering, egress, and incidents
+| Setting | Value | Use |
+|---|---:|---|
+| `QUEUE_DEPTH` | `1024` | per-shard queue cap |
+| `WORKER_COUNT` | `4` | per-shard worker pool |
+| `MAX_RETRIES` | `3` | retry cap |
+| `RETRY_BACKOFF` | `500ms` | retry spacing |
+| `LEASE_TTL` | `5s` | shard lease lifetime |
+| `LEASE_RENEW_INTERVAL` | `1s` | lease renewal cadence |
+| `REQUEST_TIMEOUT` | `2s` | request budget |
+| `MAX_PAYLOAD_BYTES` | `256KiB` | request size cap |
+| `MAX_INFLIGHT_PER_CLIENT` | `20` | client concurrency cap |
+| `HISTORY_LIMIT` | `256` | retained event history |
+| `STATE_RETENTION` | `24h` | state retention window |
+| `WAL_MAX_ENTRIES` | `2048` | WAL compaction bound |
 
-## Operating envelope
+## Docs
 
-Runtime defaults:
-- `QUEUE_DEPTH=1024` per shard
-- `WORKER_COUNT=4` per shard
-- `MAX_RETRIES=3`
-- `RETRY_BACKOFF=500ms`
-- `LEASE_TTL=5s`
-- `LEASE_RENEW_INTERVAL=1s`
-- `REQUEST_TIMEOUT=2s`
-- `MAX_PAYLOAD_BYTES=256KiB`
-- `MAX_INFLIGHT_PER_CLIENT=20`
-- `HISTORY_LIMIT=256`
-- `STATE_RETENTION=24h`
-- `WAL_MAX_ENTRIES=2048`
+- architecture: [`docs/architecture.md`](./docs/architecture.md)
+- quantification: [`docs/quantification.md`](./docs/quantification.md)
+- lifecycle math: [`docs/lifecycle-math.md`](./docs/lifecycle-math.md)
+- v2 gaps: [`docs/v2-gaps.md`](./docs/v2-gaps.md)
+- service levels: [`docs/service-levels.md`](./docs/service-levels.md)
+- measurement: [`docs/measurement.md`](./docs/measurement.md)
+- operations: [`docs/operations.md`](./docs/operations.md)
+- recovery: [`docs/recovery.md`](./docs/recovery.md)
+- security: [`docs/security.md`](./docs/security.md)
+- testing: [`docs/testing.md`](./docs/testing.md)
+- delivery: [`docs/delivery.md`](./docs/delivery.md)
+- docs index: [`docs/README.md`](./docs/README.md)
+- deployment: [`infra/compose.yaml`](./infra/compose.yaml)
+- measurement runner: [`cmd/measure`](./cmd/measure)
 
-Hard rules:
-- queue age target under `1s`
+## Operating bounds
+
+- queue age target: under `1s`
 - queue age at `1 slot` (`12s`) is unsafe
 - queue full is unsafe
 - stale authority is unsafe
@@ -58,11 +67,7 @@ Hard rules:
 - retries stop when expected value is non-positive
 - recovery must re-fence before rejoin
 
-Capacity:
-- a single instance is not the 100k/s answer
-- 100k/s requires partitioning or upstream load distribution
-- shard-local state, queueing, and authority are the first scaling boundary
-- Valkey / Memorystore, NATS, and the worker pool are bottlenecks
+
 
 ## Operational states
 
@@ -71,7 +76,7 @@ Capacity:
 | Ready | authority current, queue age under target, confidence above threshold |
 | Degraded | pressure rising but still bounded |
 | Unsafe | authority stale, queue full, confidence below threshold, or recovery inconsistent |
-| Draining | shutdown or handoff; finish in-flight work, seal state, release authority |
+| Draining | stop new work, finish in-flight work, seal state, release authority |
 
 ## Public surfaces
 
@@ -80,12 +85,7 @@ Capacity:
 | `/relay/v1/data/validator_registration` | validator registration lookup |
 | `/relay/v1/builder/validators` | builder-facing validator set |
 | `/relay/v1/builder/blocks` | builder block submission |
-| `/healthz` / `/readyz` | operational health and routing |
-
-## Architecture
-
-- architecture details: [`docs/architecture.md`](./docs/architecture.md)
-- operational index: [`docs/README.md`](./docs/README.md)
+| `/healthz` / `/readyz` | health and readiness |
 
 ## NFRs
 
@@ -102,9 +102,10 @@ Capacity:
 | Scalability | scale by sharding, not by adding global coordination |
 | Operability | clear health states, clear status codes, clear failover rules |
 
-## DSA
+## Data structures
 
 Live:
+
 - rendezvous hashing for shard routing
 - lease / epoch / fence records for authority
 - exact dedupe map for idempotency
@@ -112,8 +113,11 @@ Live:
 - inflight map for bounded concurrency
 - append-only event log for durable evidence
 - Merkle trees for checkpoint sealing
+- Valkey for coordination state
+- MinIO for checkpoint artifacts
 
 Offline:
+
 - SCC and reachability for recovery and dependency validation
 - min-cut / flow for capacity analysis
 - replay graph checks for recovery safety
@@ -151,25 +155,47 @@ Offline:
 
 - Jaeger traces carry request ID, bundle ID, shard ID, region ID, lease ID, epoch, fence token, chain-view ID, finality depth, confidence score, recovery state, and decision outcome
 - metrics include request rate, queue depth, queue age, queue net value, retry debt, worker saturation, backend latency, state latency, broker latency, decision rate, and dead-letter rate
-- sample slow paths and failures; keep labels bounded; do not log raw payloads by default
+- slow paths and failures are sampled; labels stay bounded; raw payloads are not logged by default
+
+## Proof loop
+
+- `cmd/measure` runs steady, burst, and faulted scenarios against the same relay stack or a live HTTP target
+- reports capture health, metrics, latency, and regression flags before and after each run
 
 ## Economics
 
-v3 has recurring operating cost. It is negative by default until value preservation or revenue is proven.
+Operating cost is negative by default until value preservation or revenue is proven.
 
-- compute: about `$245/month`; managed hot state: about `+$110/month`
-- storage: low tens/month; logging / trace: `0` while under free tiers; egress is variable
-- `ExpectedNet = ExpectedValue - DelayCost - ComputeCost - RetryCost - FailureRisk`
-- admission requires `ExpectedNet > 0` under current authority and chain confidence
-- break-even: `~$250/month` lean baseline, `~$350/month` managed hot state
+```text
+ExpectedNet = ExpectedValue - DelayCost - ComputeCost - RetryCost - FailureRisk
+```
+
+Admission requires:
+
+```text
+ExpectedNet > 0
+```
+
+Reference costs:
+
+- compute: about `$245/month`
+- managed hot state: about `+$110/month`
+- storage: low tens/month
+- logging / trace: `0` while under free tiers
+- egress: variable
+
+Reference break-even:
+
+- lean baseline: about `$250/month`
+- managed hot state: about `$350/month`
 - `10,000` accepted bundles/month: about `$0.025-$0.035` per bundle
 - `100,000` accepted bundles/month: about `$0.0025-$0.0035` per bundle
-- live threshold: `ValuePreserved + Revenue >= OperatingCost + CapitalCost + FailureLosses`
 
 ## Launch gate
 
 Do not promote v3 unless:
-- public relay APIs are compatible with mev-boost expectations
+
+- public relay APIs match mev-boost expectations
 - one shard has one authority at a time
 - stale writers are rejected on every write path
 - recovery re-fences before rejoin
@@ -180,6 +206,17 @@ Do not promote v3 unless:
 - observability stays sampled under load
 - infra cost stays inside the operating envelope
 - rollouts can cut over without mixed authority
+
+## What we are striving for
+
+v3 is trying to make the relay behave like a governed control system, not just a queue with checks:
+
+- every state transition is legal and observable
+- authority is explicit, fenced, and recoverable
+- policy changes come from measured pressure, not guesswork
+- recovery and rollout are controlled paths, not side effects
+- measurement is part of the runtime contract, not an afterthought
+- the system preserves invariants under uncertainty and competing objectives
 
 ## Non-goals
 

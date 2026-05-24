@@ -66,13 +66,15 @@ This file describes the current operational state model, signals, alert classes,
 - per-client inflight skew
 - confidence drift
 
-## Response patterns
+## Alert to action
 
-- page alerts map to stop-accepting, draining, or quarantine responses
-- investigate alerts map to verification work
-- track alerts map to tickets and later review
+| Alert class | Action |
+|---|---|
+| Page now | stop-accepting, draining, or quarantine |
+| Investigate | verify the affected path and compare with the last good run |
+| Track | file a ticket and review later |
 
-## Runbook responses
+## First responses
 
 ### Authority loss
 
@@ -129,7 +131,7 @@ This file describes the current operational state model, signals, alert classes,
 - safety error: stale authority, recovery inconsistency, split-brain suspected, low chain confidence, audit divergence
 - internal error: invariant failure, panic
 
-## Log rules in the current system
+## Log rules
 
 - no raw payloads by default
 - no secrets

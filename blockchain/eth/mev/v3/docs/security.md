@@ -1,6 +1,6 @@
 # Security
 
-This is the current trust boundary and the minimum hardening described in the repo.
+This is the trust boundary and minimum hardening for the current v3 model.
 
 ## Trust boundary
 
@@ -8,7 +8,7 @@ This is the current trust boundary and the minimum hardening described in the re
 - everything past ingress is controlled input
 - transport metadata is not authority
 
-## Minimum controls in the current design
+## Minimum controls
 
 - request size limits
 - explicit auth where required
@@ -17,20 +17,21 @@ This is the current trust boundary and the minimum hardening described in the re
 - payload redaction in logs and traces
 - replay-abuse resistance through dedupe and fencing
 
-## Rejected inputs
+## Request rules
 
-- malformed payloads
-- oversized payloads
-- duplicate submissions that violate idempotency
-- stale authority writes
-- unsafe backend input
+- reject malformed payloads
+- reject oversized payloads
+- reject duplicate submissions that violate idempotency
+- reject stale authority writes
+- reject unsafe backend input
 
-## Log exclusions
+## Log rules
 
-- raw bundle payloads
-- secrets
-- high-cardinality user data
-- opaque blobs that do not help incident response
+- no raw bundle payloads
+- no secrets
+- no high-cardinality user data
+- no opaque blobs that do not help incident response
+- metrics should carry IDs, not payloads
 
 ## Not covered yet
 
