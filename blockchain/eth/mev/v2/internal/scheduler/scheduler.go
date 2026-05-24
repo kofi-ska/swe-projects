@@ -8,6 +8,13 @@ import (
 	"time"
 )
 
+var (
+	ErrQueueClosed   = errors.New("queue closed")
+	ErrQueueDisabled = errors.New("queue disabled")
+	ErrQueueOverflow = errors.New("queue overflow")
+	ErrStaleWork     = errors.New("stale work")
+)
+
 // Item is one bounded unit of scheduled work.
 type Item struct {
 	ID                string
@@ -43,19 +50,19 @@ func (q *Queue) Push(item Item) (evicted *Item, accepted bool, err error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.closed {
-		return nil, false, errors.New("queue closed")
+		return nil, false, ErrQueueClosed
 	}
 	if item.DeadlineAt.IsZero() || time.Now().UTC().After(item.DeadlineAt) {
-		return nil, false, errors.New("stale work")
+		return nil, false, ErrStaleWork
 	}
 	if q.cap == 0 {
-		return nil, false, errors.New("queue disabled")
+		return nil, false, ErrQueueDisabled
 	}
 	prevLen := len(q.items)
 	if len(q.items) >= q.cap {
 		worst := q.items[len(q.items)-1]
 		if !betterThan(item, worst) {
-			return nil, false, errors.New("queue overflow")
+			return nil, false, ErrQueueOverflow
 		}
 		ev := worst
 		q.items = q.items[:len(q.items)-1]

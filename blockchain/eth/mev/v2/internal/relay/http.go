@@ -1,9 +1,7 @@
 package relay
 
 import (
-	"context"
 	"encoding/json"
-	"errors"
 	"net"
 	"net/http"
 	"strings"
@@ -53,17 +51,7 @@ func (h Handler) submitBundle(w http.ResponseWriter, r *http.Request) {
 	}
 	rec, err := h.Svc.submitWithIdentity(r.Context(), req, clientIdentity(r.RemoteAddr), h.Svc.cfg.RegionID)
 	if err != nil {
-		status := http.StatusBadRequest
-		switch {
-		case strings.Contains(err.Error(), "duplicate bundle"):
-			status = http.StatusConflict
-		case strings.Contains(err.Error(), "queue overflow"),
-			strings.Contains(err.Error(), "client inflight limit"):
-			status = http.StatusServiceUnavailable
-		case errors.Is(err, context.DeadlineExceeded):
-			status = http.StatusGatewayTimeout
-		}
-		http.Error(w, err.Error(), status)
+		http.Error(w, err.Error(), statusForError(err))
 		return
 	}
 	h.writeJSON(w, model.JSONRPCResponse{
