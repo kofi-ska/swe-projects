@@ -2,13 +2,13 @@ package memory
 
 import (
 	"context"
-	"errors"
 	"sort"
 	"sync"
 	"time"
 
 	"mevrelayv2/internal/lifecycle"
 	"mevrelayv2/internal/model"
+	state "mevrelayv2/internal/state"
 )
 
 // Store is an in-memory v2 state store for tests and isolated runs.
@@ -42,10 +42,10 @@ func (s *Store) CreateBundle(ctx context.Context, rec model.BundleRecord) (model
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return model.BundleRecord{}, errors.New("state closed")
+		return model.BundleRecord{}, state.ErrStateClosed
 	}
 	if existing, ok := s.hashIndex[rec.BundleHash]; ok {
-		return s.records[existing], errors.New("duplicate bundle")
+		return s.records[existing], state.ErrDuplicateBundle
 	}
 	s.records[rec.ID] = rec
 	s.hashIndex[rec.BundleHash] = rec.ID
@@ -88,10 +88,10 @@ func (s *Store) TransitionBundle(ctx context.Context, id string, from, to model.
 	defer s.mu.Unlock()
 	rec, ok := s.records[id]
 	if !ok {
-		return model.BundleRecord{}, errors.New("bundle not found")
+		return model.BundleRecord{}, state.ErrBundleNotFound
 	}
 	if rec.State != from {
-		return model.BundleRecord{}, errors.New("state mismatch")
+		return model.BundleRecord{}, state.ErrStateMismatch
 	}
 	rec.State = to
 	rec.Reason = reason
@@ -118,7 +118,7 @@ func (s *Store) UpdateRetryCount(ctx context.Context, id string, retryCount int)
 	defer s.mu.Unlock()
 	rec, ok := s.records[id]
 	if !ok {
-		return model.BundleRecord{}, errors.New("bundle not found")
+		return model.BundleRecord{}, state.ErrBundleNotFound
 	}
 	rec.RetryCount = retryCount
 	rec.Version++
@@ -133,7 +133,7 @@ func (s *Store) UpdateResult(ctx context.Context, id string, score, profit float
 	defer s.mu.Unlock()
 	rec, ok := s.records[id]
 	if !ok {
-		return model.BundleRecord{}, errors.New("bundle not found")
+		return model.BundleRecord{}, state.ErrBundleNotFound
 	}
 	rec.Score = score
 	rec.ProfitEth = profit
@@ -150,10 +150,10 @@ func (s *Store) ReserveInflight(ctx context.Context, clientID string, limit int)
 	defer s.mu.Unlock()
 	cur := s.inflight[clientID]
 	if cur >= limit {
-		return cur, errors.New("client inflight limit")
+		return cur, state.ErrClientInflight
 	}
 	if cur == 0 && len(s.inflight) >= s.limit {
-		return cur, errors.New("state capacity")
+		return cur, state.ErrStateCapacity
 	}
 	cur++
 	s.inflight[clientID] = cur
@@ -188,7 +188,7 @@ func (s *Store) ScheduleRetry(ctx context.Context, id string, due time.Time) err
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return errors.New("state closed")
+		return state.ErrStateClosed
 	}
 	s.retries[id] = due.UTC()
 	s.pruneRetriesLocked()
@@ -200,7 +200,7 @@ func (s *Store) ClaimDueRetries(ctx context.Context, now time.Time, limit int) (
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return nil, errors.New("state closed")
+		return nil, state.ErrStateClosed
 	}
 	out := make([]string, 0, limit)
 	for id, due := range s.retries {
@@ -282,7 +282,7 @@ func (s *Store) Health(context.Context) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.closed {
-		return errors.New("state closed")
+		return state.ErrStateClosed
 	}
 	return nil
 }

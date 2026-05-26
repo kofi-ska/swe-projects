@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"mevrelayv2/internal/model"
+	"mevrelayv2/internal/telemetry"
 )
 
 // HealthState summarizes operational posture.
@@ -13,6 +14,7 @@ type HealthState string
 const (
 	HealthStateHealthy  HealthState = "healthy"
 	HealthStateDegraded HealthState = "degraded"
+	HealthStateDraining HealthState = "draining"
 	HealthStateUnsafe   HealthState = "unsafe"
 )
 
@@ -37,6 +39,7 @@ func (s *Service) AssessHealth(ctx context.Context) HealthReport {
 	oldest := s.queue.OldestAge(now)
 	queueNet := 0.0
 	staleCount := 0
+	retryDebt := 0.0
 	for _, item := range items {
 		net := item.ExpectedValue - item.ExpectedCost
 		if net > 0 {
@@ -51,6 +54,14 @@ func (s *Service) AssessHealth(ctx context.Context) HealthReport {
 		for _, rec := range recs {
 			if rec.State == model.StateRetryPending {
 				retryPending++
+				weight := 1.0 + float64(rec.RetryCount)
+				if !rec.UpdatedAt.IsZero() && s.cfg.MaxQueueAge > 0 {
+					age := now.Sub(rec.UpdatedAt)
+					if age > 0 {
+						weight += float64(age) / float64(s.cfg.MaxQueueAge)
+					}
+				}
+				retryDebt += weight
 			}
 		}
 	}
@@ -66,27 +77,39 @@ func (s *Service) AssessHealth(ctx context.Context) HealthReport {
 		RetryPending:     retryPending,
 		RegionID:         s.cfg.RegionID,
 	}
+	if s.draining.Load() && report.State != HealthStateUnsafe {
+		report.State = HealthStateDraining
+		report.Ready = false
+		report.Reasons = append(report.Reasons, "draining")
+	}
 
 	if err := s.wal.Health(); err != nil {
 		report.State = HealthStateUnsafe
 		report.Ready = false
 		report.Reasons = append(report.Reasons, "wal unhealthy")
 	}
+	s.metrics.ObserveWALLatency(time.Since(now))
+	now = time.Now().UTC()
 	if err := s.state.Health(ctx); err != nil {
 		report.State = HealthStateUnsafe
 		report.Ready = false
 		report.Reasons = append(report.Reasons, "state unhealthy")
 	}
+	s.metrics.ObserveStateLatency(time.Since(now))
+	now = time.Now().UTC()
 	if err := s.backend.Ping(ctx); err != nil {
 		report.State = HealthStateUnsafe
 		report.Ready = false
 		report.Reasons = append(report.Reasons, "backend unhealthy")
 	}
+	s.metrics.ObserveBackendLatency(time.Since(now))
+	now = time.Now().UTC()
 	if err := s.broker.Ping(ctx); err != nil {
 		report.State = HealthStateUnsafe
 		report.Ready = false
 		report.Reasons = append(report.Reasons, "broker unhealthy")
 	}
+	s.metrics.ObserveBrokerLatency(time.Since(now))
 	if report.QueueCap > 0 && report.QueueDepth*100/report.QueueCap >= 80 && report.State == HealthStateHealthy {
 		report.State = HealthStateDegraded
 		report.Reasons = append(report.Reasons, "queue pressure")
@@ -114,5 +137,16 @@ func (s *Service) AssessHealth(ctx context.Context) HealthReport {
 		report.Ready = false
 		report.Reasons = append(report.Reasons, "stale work present")
 	}
+	switch report.State {
+	case HealthStateHealthy:
+		s.metrics.SetHealthState(telemetry.HealthHealthy)
+	case HealthStateDegraded:
+		s.metrics.SetHealthState(telemetry.HealthDegraded)
+	case HealthStateDraining:
+		s.metrics.SetHealthState(telemetry.HealthDraining)
+	default:
+		s.metrics.SetHealthState(telemetry.HealthUnsafe)
+	}
+	s.metrics.SetQueue(uint64(report.QueueDepth), uint64(report.QueueCap), uint64(report.QueueOldestAgeMS), report.QueueNetValue, retryDebt)
 	return report
 }

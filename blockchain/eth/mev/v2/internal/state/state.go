@@ -2,9 +2,19 @@ package state
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"mevrelayv2/internal/model"
+)
+
+var (
+	ErrStateClosed     = errors.New("state closed")
+	ErrDuplicateBundle = errors.New("duplicate bundle")
+	ErrBundleNotFound  = errors.New("bundle not found")
+	ErrStateMismatch   = errors.New("state mismatch")
+	ErrClientInflight  = errors.New("client inflight limit")
+	ErrStateCapacity   = errors.New("state capacity")
 )
 
 // Store owns the authoritative v2 coordination state.

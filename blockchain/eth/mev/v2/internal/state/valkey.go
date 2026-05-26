@@ -88,20 +88,20 @@ return {1, bundleID}
 			existing := toString(reply[1])
 			if existing != "" {
 				if rec2, ok, _ := s.GetBundle(ctx, existing); ok {
-					return rec2, errors.New("duplicate bundle")
+					return rec2, ErrDuplicateBundle
 				}
 			}
-			return model.BundleRecord{}, errors.New("duplicate bundle")
+			return model.BundleRecord{}, ErrDuplicateBundle
 		}
 	case string:
 		if v == "0" {
 			existing := toString(reply[1])
 			if existing != "" {
 				if rec2, ok, _ := s.GetBundle(ctx, existing); ok {
-					return rec2, errors.New("duplicate bundle")
+					return rec2, ErrDuplicateBundle
 				}
 			}
-			return model.BundleRecord{}, errors.New("duplicate bundle")
+			return model.BundleRecord{}, ErrDuplicateBundle
 		}
 	}
 	return rec, nil
@@ -152,14 +152,14 @@ func (s *ValkeyStore) TransitionBundle(ctx context.Context, id string, from, to 
 				return err
 			}
 			if len(m) == 0 {
-				return errors.New("bundle not found")
+				return ErrBundleNotFound
 			}
 			rec, ok, err := mapToRecord(m)
 			if err != nil || !ok {
 				return err
 			}
 			if rec.State != from {
-				return errors.New("state mismatch")
+				return ErrStateMismatch
 			}
 			rec.State = to
 			rec.Reason = reason
@@ -219,7 +219,7 @@ func (s *ValkeyStore) updateBundle(ctx context.Context, id string, fn func(*mode
 				return err
 			}
 			if len(m) == 0 {
-				return errors.New("bundle not found")
+				return ErrBundleNotFound
 			}
 			rec, ok, err := mapToRecord(m)
 			if err != nil || !ok {
@@ -266,7 +266,7 @@ return current
 	}
 	if res < 0 {
 		cur, _ := s.GetInflight(ctx, clientID)
-		return cur, errors.New("client inflight limit")
+		return cur, ErrClientInflight
 	}
 	_ = s.touch(ctx, key)
 	return int(res), nil

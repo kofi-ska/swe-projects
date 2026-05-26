@@ -35,6 +35,9 @@ func (b *Broker) Publish(ctx context.Context, msg broker.Message) error {
 		return errors.New("broker closed")
 	}
 	subs := b.subscribers[msg.Topic]
+	if len(subs) == 0 {
+		return nil
+	}
 	for c := range subs {
 		select {
 		case c.ch <- cloneMessage(msg):
