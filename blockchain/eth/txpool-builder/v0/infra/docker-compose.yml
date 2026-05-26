@@ -1,0 +1,44 @@
+
+services:
+  geth:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.geth
+    container_name: geth-node
+    command:
+      [
+        "--dev",
+        "--http",
+        "--http.addr=0.0.0.0",
+        "--http.vhosts=*",
+        "--http.api=eth,web3,net,txpool,debug",
+        "--allow-insecure-unlock"
+      ]
+    ports:
+      - "8545:8545"
+    volumes:
+      - geth_data:/root/.ethereum
+      - ./docker/seed_txpool.sh:/root/seed_txpool.sh
+    networks:
+      - buildernet
+    entrypoint: ["/bin/sh", "-c", "geth $@ & sleep 10 && sh /root/seed_txpool.sh", "--"]
+
+
+  builder:
+    build:
+      context: ../        
+      dockerfile: infra/docker/Dockerfile.builder
+    container_name: txpool-builder
+    depends_on:
+      - geth
+    environment:
+      - GETH_RPC_URL=http://geth:8545
+    networks:
+      - buildernet
+
+volumes:
+  geth_data:
+
+networks:
+  buildernet:
+    driver: bridge
