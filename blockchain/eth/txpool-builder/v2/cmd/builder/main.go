@@ -16,6 +16,7 @@ import (
 	"txpool-builder/v2/internal/service"
 )
 
+// main keeps startup, serving, and shutdown in one visible process boundary.
 func main() {
 	cfg, err := config.Load(os.Args[1:])
 	if err != nil {

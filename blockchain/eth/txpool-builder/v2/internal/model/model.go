@@ -64,6 +64,7 @@ type Config struct {
 	LowPriorityAllowed bool
 }
 
+// BuildRequest stays minimal so admission work remains cheap and bounded.
 type BuildRequest struct {
 	RequestID      string `json:"request_id,omitempty"`
 	IdempotencyKey string `json:"idempotency_key"`
@@ -71,6 +72,7 @@ type BuildRequest struct {
 	PolicyVersion  string `json:"policy_version,omitempty"`
 }
 
+// BuildResponse returns early so clients do not wait on build execution.
 type BuildResponse struct {
 	RequestID    string     `json:"request_id"`
 	JobID        string     `json:"job_id"`
@@ -95,6 +97,7 @@ const (
 	JobDelayed   JobState = "DELAYED"
 )
 
+// RequestRecord keeps request identity and timing so replay stays auditable.
 type RequestRecord struct {
 	RequestID      string
 	IdempotencyKey string
@@ -103,6 +106,7 @@ type RequestRecord struct {
 	SubmittedAt    time.Time
 }
 
+// JobRecord keeps the small amount of mutable state needed to track one job.
 type JobRecord struct {
 	JobID          string
 	RequestID      string
@@ -119,6 +123,7 @@ type JobRecord struct {
 	RetryAfterMS   int64
 }
 
+// Snapshot is immutable so one epoch can be reused safely across workers.
 type Snapshot struct {
 	SchemaVersion   int                      `json:"schema_version"`
 	SnapshotID      string                   `json:"snapshot_id"`
@@ -139,6 +144,7 @@ type Snapshot struct {
 	HeadDrift       bool                     `json:"head_drift"`
 }
 
+// Transaction is normalized so selection can stay deterministic and typed.
 type Transaction struct {
 	Hash                 string     `json:"hash"`
 	From                 string     `json:"from"`
@@ -158,6 +164,7 @@ type Transaction struct {
 	ReasonDetail         string     `json:"reason_detail,omitempty"`
 }
 
+// Candidate is the persisted output because the service must be replayable.
 type Candidate struct {
 	SchemaVersion       int            `json:"schema_version"`
 	CandidateID         string         `json:"candidate_id"`
@@ -181,6 +188,7 @@ type Candidate struct {
 	BuildDurationMS     int64          `json:"build_duration_ms,omitempty"`
 }
 
+// Trace records decisions so load failures can be diagnosed after the fact.
 type Trace struct {
 	SchemaVersion       int            `json:"schema_version"`
 	TraceID             string         `json:"trace_id"`
@@ -201,6 +209,7 @@ type Trace struct {
 	ReplayMode          bool           `json:"replay_mode"`
 }
 
+// TxDecision keeps one reason per tx so rejection accounting stays stable.
 type TxDecision struct {
 	TxHash        string     `json:"tx_hash"`
 	From          string     `json:"from"`
@@ -213,6 +222,7 @@ type TxDecision struct {
 	Score         string     `json:"score,omitempty"`
 }
 
+// Status exposes only the live counters needed for readiness and control.
 type Status struct {
 	Healthy         bool      `json:"healthy"`
 	Mode            string    `json:"mode"`
@@ -227,6 +237,7 @@ type Status struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 }
 
+// Result ties the artifact paths to the job so retrieval stays O(1).
 type Result struct {
 	JobID        string     `json:"job_id"`
 	RequestID    string     `json:"request_id"`
@@ -242,6 +253,7 @@ type Result struct {
 	CompletedAt  time.Time  `json:"completed_at"`
 }
 
+// StartupError keeps failures typed so callers can shed, retry, or abort.
 type StartupError struct {
 	Code   ReasonCode
 	Stage  string
@@ -259,6 +271,7 @@ func (e *StartupError) Error() string {
 	return string(e.Code) + ": " + e.Detail
 }
 
+// Unwrap lets callers recover the underlying error without losing the typed code.
 func (e *StartupError) Unwrap() error {
 	if e == nil {
 		return nil

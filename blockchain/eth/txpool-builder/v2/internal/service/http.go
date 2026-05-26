@@ -8,6 +8,7 @@ import (
 	"txpool-builder/v2/internal/model"
 )
 
+// ServeHTTP keeps the routing table small so request dispatch stays obvious.
 func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/health":
@@ -27,6 +28,7 @@ func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleHealth gives probes a cheap liveness signal without touching state.
 func (s *Service) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"healthy": true,
@@ -34,6 +36,7 @@ func (s *Service) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+// handleReady gates traffic on freshness and queue headroom.
 func (s *Service) handleReady(w http.ResponseWriter, _ *http.Request) {
 	st := s.Status()
 	if st.SnapshotID == "" || st.QueueDepth >= s.cfg.QueueSize {
@@ -47,10 +50,12 @@ func (s *Service) handleReady(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
+// handleStatus exposes the metrics operators need without extra RPC work.
 func (s *Service) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, s.Status())
 }
 
+// handleBuild keeps request parsing separate from admission policy.
 func (s *Service) handleBuild(w http.ResponseWriter, r *http.Request) {
 	var req model.BuildRequest
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10))
@@ -66,6 +71,7 @@ func (s *Service) handleBuild(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, code, resp)
 }
 
+// handleJob serves job state directly so clients do not need to poll internals.
 func (s *Service) handleJob(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/jobs/")
 	s.mu.RLock()
@@ -78,6 +84,7 @@ func (s *Service) handleJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, j)
 }
 
+// handleResult serves the immutable artifact pointers and result payload.
 func (s *Service) handleResult(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/results/")
 	s.mu.RLock()
@@ -90,6 +97,7 @@ func (s *Service) handleResult(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, res)
 }
 
+// writeJSON centralizes response encoding so handlers do not duplicate boilerplate.
 func writeJSON(w http.ResponseWriter, code int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

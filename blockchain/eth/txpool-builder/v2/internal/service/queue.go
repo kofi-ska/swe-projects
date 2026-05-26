@@ -11,6 +11,7 @@ import (
 	"txpool-builder/v2/internal/model"
 )
 
+// Submit keeps admission cheap so hot-path work does not scale with build cost.
 func (s *Service) Submit(ctx context.Context, req model.BuildRequest) (model.BuildResponse, int, error) {
 	if strings.TrimSpace(req.IdempotencyKey) == "" {
 		return model.BuildResponse{}, http.StatusBadRequest, fmt.Errorf("idempotency_key is required")
@@ -94,6 +95,7 @@ func (s *Service) Submit(ctx context.Context, req model.BuildRequest) (model.Bui
 	}
 }
 
+// workerLoop exists to keep queue consumption isolated from HTTP admission.
 func (s *Service) workerLoop(workerID int) {
 	for {
 		select {
@@ -108,6 +110,7 @@ func (s *Service) workerLoop(workerID int) {
 	}
 }
 
+// refreshLoop refreshes the shared snapshot on cadence so workers can reuse it.
 func (s *Service) refreshLoop() {
 	ticker := time.NewTicker(s.cfg.RefreshInterval)
 	defer ticker.Stop()
@@ -123,6 +126,7 @@ func (s *Service) refreshLoop() {
 	}
 }
 
+// normalizePriorityClass collapses request variance into the few classes the queue can honor.
 func normalizePriorityClass(class string) string {
 	switch strings.ToLower(strings.TrimSpace(class)) {
 	case "high":

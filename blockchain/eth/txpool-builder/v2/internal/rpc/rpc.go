@@ -12,19 +12,23 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
+// Caller stays tiny so the service can be tested without a full client.
 type Caller interface {
 	CallContext(ctx context.Context, result interface{}, method string, args ...interface{}) error
 }
 
+// Dial is isolated here so transport setup stays out of the service package.
 func Dial(url string) (*rpc.Client, error) {
 	return rpc.Dial(url)
 }
 
+// EndpointLabel hides the raw URL while still letting runs be correlated.
 func EndpointLabel(url string) string {
 	sum := sha256.Sum256([]byte(url))
 	return hex.EncodeToString(sum[:8])
 }
 
+// ChainID is a startup gate so the service never builds for the wrong chain.
 func ChainID(ctx context.Context, c Caller) (*big.Int, error) {
 	var raw string
 	if err := c.CallContext(ctx, &raw, "eth_chainId"); err != nil {
@@ -33,6 +37,7 @@ func ChainID(ctx context.Context, c Caller) (*big.Int, error) {
 	return parseBigIntString(raw)
 }
 
+// BlockNumber anchors the snapshot to a concrete head for replay safety.
 func BlockNumber(ctx context.Context, c Caller) (*big.Int, error) {
 	var raw string
 	if err := c.CallContext(ctx, &raw, "eth_blockNumber"); err != nil {
@@ -41,6 +46,7 @@ func BlockNumber(ctx context.Context, c Caller) (*big.Int, error) {
 	return parseBigIntString(raw)
 }
 
+// Syncing blocks capture while the upstream node is not ready to serve truth.
 func Syncing(ctx context.Context, c Caller) (bool, error) {
 	var raw json.RawMessage
 	if err := c.CallContext(ctx, &raw, "eth_syncing"); err != nil {
@@ -55,6 +61,7 @@ func Syncing(ctx context.Context, c Caller) (bool, error) {
 	return true, nil
 }
 
+// ClientVersion is stored so operator reports can explain source behavior.
 func ClientVersion(ctx context.Context, c Caller) (string, error) {
 	var raw string
 	if err := c.CallContext(ctx, &raw, "web3_clientVersion"); err != nil {
@@ -63,12 +70,14 @@ func ClientVersion(ctx context.Context, c Caller) (string, error) {
 	return raw, nil
 }
 
+// BlockHeader carries only the header fields needed to bound selection.
 type BlockHeader struct {
 	Number        string `json:"number"`
 	GasLimit      string `json:"gasLimit"`
 	BaseFeePerGas string `json:"baseFeePerGas"`
 }
 
+// BlockHeaderByNumber keeps header fetches separate from pool capture.
 func BlockHeaderByNumber(ctx context.Context, c Caller, number string) (BlockHeader, error) {
 	var h BlockHeader
 	if err := c.CallContext(ctx, &h, "eth_getBlockByNumber", number, false); err != nil {
@@ -77,6 +86,7 @@ func BlockHeaderByNumber(ctx context.Context, c Caller, number string) (BlockHea
 	return h, nil
 }
 
+// TxPoolContent is the raw source so normalization can stay deterministic.
 func TxPoolContent(ctx context.Context, c Caller) (json.RawMessage, error) {
 	var raw json.RawMessage
 	if err := c.CallContext(ctx, &raw, "txpool_content"); err != nil {
@@ -85,6 +95,7 @@ func TxPoolContent(ctx context.Context, c Caller) (json.RawMessage, error) {
 	return raw, nil
 }
 
+// parseBigIntString keeps RPC number parsing strict so bad headers fail early.
 func parseBigIntString(s string) (*big.Int, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {

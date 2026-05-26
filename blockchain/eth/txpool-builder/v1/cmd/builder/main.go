@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
+// main keeps the CLI lifecycle visible so startup, run, and shutdown are easy to audit.
 func main() {
 	defer recoverPanic()
 
@@ -104,11 +105,13 @@ func main() {
 	fmt.Println(string(b))
 }
 
+// fail exits through one path so error handling stays predictable.
 func fail(err error, code int) {
 	fmt.Fprintln(os.Stderr, err.Error())
 	os.Exit(code)
 }
 
+// recoverPanic converts panics into a clean process exit instead of a silent crash.
 func recoverPanic() {
 	if r := recover(); r != nil {
 		fmt.Fprintln(os.Stderr, "PANIC_RECOVERED:", r)
@@ -116,6 +119,7 @@ func recoverPanic() {
 	}
 }
 
+// exitCode maps typed failures to stable process codes for operators and tests.
 func exitCode(err error) int {
 	if err == nil {
 		return 0

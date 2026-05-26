@@ -14,6 +14,7 @@ import (
 	rpcx "txpool-builder/v2/internal/rpc"
 )
 
+// Service owns the small set of mutable runtime state needed for bounded builds.
 type Service struct {
 	cfg model.Config
 	rpc rpcx.Caller
@@ -58,6 +59,7 @@ type jobEnvelope struct {
 	JobID   string
 }
 
+// New keeps construction explicit so the service has no hidden setup work.
 func New(cfg model.Config, rpc rpcx.Caller, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
@@ -74,6 +76,7 @@ func New(cfg model.Config, rpc rpcx.Caller, logger *slog.Logger) *Service {
 	}
 }
 
+// Start performs one-time setup before any request is admitted.
 func (s *Service) Start(ctx context.Context) error {
 	s.ctx, s.cancel = context.WithCancel(ctx)
 	if err := s.refreshSnapshot(s.ctx); err != nil {
@@ -94,6 +97,7 @@ func (s *Service) Start(ctx context.Context) error {
 	return nil
 }
 
+// Shutdown stops work cleanly so in-flight jobs do not leak state.
 func (s *Service) Shutdown(ctx context.Context) error {
 	if s.cancel != nil {
 		s.cancel()
@@ -111,6 +115,7 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	}
 }
 
+// Status exposes the counters needed to decide whether to shed or continue.
 func (s *Service) Status() model.Status {
 	snapshot := s.currentSnapshot()
 	st := model.Status{
@@ -137,18 +142,21 @@ func (s *Service) Status() model.Status {
 	return st
 }
 
+// currentSnapshot gives readers a stable pointer without copying the snapshot.
 func (s *Service) currentSnapshot() *model.Snapshot {
 	s.snapshotMu.RLock()
 	defer s.snapshotMu.RUnlock()
 	return s.current.Load()
 }
 
+// setSnapshot swaps the live epoch under lock so readers never see partial state.
 func (s *Service) setSnapshot(snap *model.Snapshot) {
 	s.snapshotMu.Lock()
 	defer s.snapshotMu.Unlock()
 	s.current.Store(snap)
 }
 
+// snapshotByID resolves historical epochs so replay and audit can dereference them.
 func (s *Service) snapshotByID(snapshotID string) *model.Snapshot {
 	if snapshotID == "" {
 		return nil
@@ -166,6 +174,7 @@ func (s *Service) snapshotByID(snapshotID string) *model.Snapshot {
 	return nil
 }
 
+// snapshotRecordByID keeps the retained decisions alongside the snapshot payload.
 func (s *Service) snapshotRecordByID(snapshotID string) *snapshotRecord {
 	if snapshotID == "" {
 		return nil
@@ -181,6 +190,7 @@ func (s *Service) snapshotRecordByID(snapshotID string) *snapshotRecord {
 	return nil
 }
 
+// recordSnapshot updates the active epoch and prunes the retained history.
 func (s *Service) recordSnapshot(snap *model.Snapshot, decisions []model.TxDecision, path string) {
 	s.snapshotMu.Lock()
 	defer s.snapshotMu.Unlock()
@@ -193,6 +203,7 @@ func (s *Service) recordSnapshot(snap *model.Snapshot, decisions []model.TxDecis
 	s.snapshots = append([]*snapshotRecord(nil), keep...)
 }
 
+// recordResult stores completed work by job so result reads stay O(1).
 func (s *Service) recordResult(res *model.Result) {
 	if res == nil {
 		return
@@ -202,6 +213,7 @@ func (s *Service) recordResult(res *model.Result) {
 	s.results[res.JobID] = res
 }
 
+// failJob records the reason before the job leaves the active queue.
 func (s *Service) failJob(jobID string, code model.ReasonCode, detail string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -213,6 +225,7 @@ func (s *Service) failJob(jobID string, code model.ReasonCode, detail string) {
 	}
 }
 
+// completeJob marks final state explicitly so terminal transitions stay auditably distinct.
 func (s *Service) completeJob(jobID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -224,6 +237,7 @@ func (s *Service) completeJob(jobID string) {
 	}
 }
 
+// pruneLocked keeps retained job state bounded so memory does not grow with traffic.
 func (s *Service) pruneLocked() {
 	if s.cfg.MaxRetainedJobs <= 0 {
 		return
@@ -253,6 +267,7 @@ func (s *Service) pruneLocked() {
 	s.pruneIdempotencyLocked()
 }
 
+// pruneIdempotencyLocked removes expired keys so dedupe state stays bounded.
 func (s *Service) pruneIdempotencyLocked() {
 	now := time.Now().UTC()
 	for key, rec := range s.idempotency {
@@ -262,6 +277,7 @@ func (s *Service) pruneIdempotencyLocked() {
 	}
 }
 
+// sortJobsByTime makes prune order deterministic and oldest-first.
 func sortJobsByTime(jobs []*model.JobRecord) {
 	sort.SliceStable(jobs, func(i, j int) bool {
 		if jobs[i].CompletedAt.Equal(jobs[j].CompletedAt) {
@@ -271,10 +287,12 @@ func sortJobsByTime(jobs []*model.JobRecord) {
 	})
 }
 
+// snapshotFreshEnough gates admission on age so stale epochs do not leak through.
 func snapshotFreshEnough(snap *model.Snapshot, maxAge time.Duration) bool {
 	return snap != nil && snap.SnapshotID != "" && time.Since(snap.CapturedAt) <= maxAge
 }
 
+// deterministicID keeps request, job, and artifact IDs reproducible from inputs.
 func deterministicID(parts ...string) string {
 	h := sha256.New()
 	for _, p := range parts {

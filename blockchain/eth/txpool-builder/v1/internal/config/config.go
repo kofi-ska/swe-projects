@@ -16,6 +16,7 @@ import (
 	"txpool-builder/v1/internal/model"
 )
 
+// Load keeps config assembly in one place so startup cost and failure modes stay obvious.
 func Load(args []string) (model.Config, error) {
 	fs := flag.NewFlagSet("txpool-builder", flag.ContinueOnError)
 	fs.SetOutput(ioDiscard{})
@@ -106,6 +107,7 @@ func Load(args []string) (model.Config, error) {
 	return cfg, nil
 }
 
+// fileConfig models the on-disk override layer so env and flags can stay simple.
 type fileConfig struct {
 	RPCURL               *string `json:"rpc_url"`
 	OutputPath           *string `json:"output_path"`
@@ -132,6 +134,7 @@ type fileConfig struct {
 	Version              *bool   `json:"version"`
 }
 
+// loadConfigFile validates file-only input before it is merged into runtime config.
 func loadConfigFile(path string, strictFlag bool, strictVisited bool) (model.Config, string, error) {
 	if strings.TrimSpace(path) == "" {
 		return model.Config{}, "", nil
@@ -176,6 +179,7 @@ func loadConfigFile(path string, strictFlag bool, strictVisited bool) (model.Con
 	return cfg, d, nil
 }
 
+// applyFileConfig keeps file-to-config mapping explicit and testable.
 func applyFileConfig(cfg *model.Config, fc fileConfig) {
 	if fc.RPCURL != nil {
 		cfg.RPCURL = *fc.RPCURL
@@ -248,6 +252,7 @@ func applyFileConfig(cfg *model.Config, fc fileConfig) {
 	}
 }
 
+// overlayEnv lets operators override file defaults without touching the file.
 func overlayEnv(cfg model.Config) model.Config {
 	if v := firstNonEmpty(os.Getenv("TXPOOL_BUILDER_RPC_URL"), os.Getenv("GETH_RPC_URL")); v != "" {
 		cfg.RPCURL = v
@@ -297,6 +302,7 @@ func overlayEnv(cfg model.Config) model.Config {
 	return cfg
 }
 
+// overlayFlags keeps CLI arguments as the final override layer.
 func overlayFlags(cfg model.Config, visited map[string]bool, vals map[string]any) model.Config {
 	if visited["rpc-url"] {
 		cfg.RPCURL = vals["rpc-url"].(string)
@@ -370,6 +376,7 @@ func overlayFlags(cfg model.Config, visited map[string]bool, vals map[string]any
 	return cfg
 }
 
+// Validate blocks unsafe settings before the service starts consuming resources.
 func Validate(cfg model.Config) error {
 	switch {
 	case cfg.RPCURL == "" && cfg.ReplaySnapshotPath == "":
@@ -420,6 +427,7 @@ func Validate(cfg model.Config) error {
 	return nil
 }
 
+// validateParentDir forces output directories to exist before runtime writes begin.
 func validateParentDir(path string) error {
 	dir := filepath.Dir(path)
 	if dir == "." || dir == "" {
@@ -428,6 +436,7 @@ func validateParentDir(path string) error {
 	return os.MkdirAll(dir, 0o755)
 }
 
+// firstNonEmpty preserves the first usable override without extra branching.
 func firstNonEmpty(values ...string) string {
 	for _, v := range values {
 		if strings.TrimSpace(v) != "" {
@@ -437,6 +446,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// firstDuration preserves flag precedence for timeout-like settings.
 func firstDuration(flagValue time.Duration, envValue string) time.Duration {
 	if flagValue > 0 {
 		return flagValue
@@ -448,26 +458,31 @@ func firstDuration(flagValue time.Duration, envValue string) time.Duration {
 	return d
 }
 
+// parseDuration keeps file-based timeouts readable without hidden units.
 func parseDuration(s string) time.Duration {
 	d, _ := time.ParseDuration(strings.TrimSpace(s))
 	return d
 }
 
+// parseInt keeps bounded integer overrides simple and explicit.
 func parseInt(s string) int {
 	v, _ := strconv.Atoi(strings.TrimSpace(s))
 	return v
 }
 
+// parseInt64 keeps size limits consistent across file and env sources.
 func parseInt64(s string) int64 {
 	v, _ := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 	return v
 }
 
+// parseUint64 keeps gas and byte counts unsigned.
 func parseUint64(s string) uint64 {
 	v, _ := strconv.ParseUint(strings.TrimSpace(s), 10, 64)
 	return v
 }
 
+// firstInt preserves flag-over-env precedence for integer settings.
 func firstInt(flagValue int, envValue string) int {
 	if flagValue > 0 {
 		return flagValue
@@ -479,6 +494,7 @@ func firstInt(flagValue int, envValue string) int {
 	return v
 }
 
+// firstInt64 preserves flag-over-env precedence for byte-size settings.
 func firstInt64(flagValue int64, envValue string) int64 {
 	if flagValue > 0 {
 		return flagValue
@@ -490,6 +506,7 @@ func firstInt64(flagValue int64, envValue string) int64 {
 	return v
 }
 
+// firstUint64 keeps gas-like settings unsigned at the merge boundary.
 func firstUint64(flagValue uint64, envValue string) uint64 {
 	if flagValue > 0 {
 		return flagValue
@@ -501,6 +518,7 @@ func firstUint64(flagValue uint64, envValue string) uint64 {
 	return v
 }
 
+// parseBigInt keeps config numerics exact so chain IDs and limits stay stable.
 func parseBigInt(s string) *big.Int {
 	if strings.TrimSpace(s) == "" {
 		return nil
@@ -521,8 +539,10 @@ func parseBigInt(s string) *big.Int {
 
 type ioDiscard struct{}
 
+// Write drops parser noise so flag parsing stays quiet in CLI and tests.
 func (ioDiscard) Write(p []byte) (int, error) { return len(p), nil }
 
+// Digest fingerprints config so replay and audit can compare like-for-like runs.
 func Digest(cfg model.Config) string {
 	type digestConfig struct {
 		ConfigPath           string `json:"config_path"`
@@ -576,6 +596,7 @@ func Digest(cfg model.Config) string {
 	return fmt.Sprintf("%x", sum[:])
 }
 
+// chainIDString keeps the config hash stable when chain ID is optional.
 func chainIDString(v *big.Int) string {
 	if v == nil {
 		return ""

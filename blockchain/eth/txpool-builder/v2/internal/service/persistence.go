@@ -11,6 +11,7 @@ import (
 	"txpool-builder/v2/internal/model"
 )
 
+// persistSnapshot keeps the retained epoch on disk so replay can work later.
 func persistSnapshot(cfg model.Config, snapshot *model.Snapshot) error {
 	if snapshot == nil {
 		return nil
@@ -26,6 +27,7 @@ func persistSnapshot(cfg model.Config, snapshot *model.Snapshot) error {
 	return pruneDir(root, cfg.MaxRetainedSnap)
 }
 
+// persistBuildArtifacts writes the candidate and trace together so they stay aligned.
 func persistBuildArtifacts(cfg model.Config, candidate model.Candidate, trace model.Trace, snapshot *model.Snapshot) (string, string, error) {
 	if snapshot == nil {
 		return "", "", fmt.Errorf("snapshot is nil")
@@ -46,6 +48,7 @@ func persistBuildArtifacts(cfg model.Config, candidate model.Candidate, trace mo
 	return candidatePath, tracePath, nil
 }
 
+// writeJSONAtomic avoids partial artifact writes by committing only once the file is complete.
 func writeJSONAtomic(path string, value any, maxBytes int64) error {
 	b, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
@@ -68,6 +71,7 @@ func writeJSONAtomic(path string, value any, maxBytes int64) error {
 	return nil
 }
 
+// pruneDir keeps history bounded so disk usage does not grow with request volume.
 func pruneDir(root string, maxRetained int) error {
 	if maxRetained <= 0 {
 		return nil

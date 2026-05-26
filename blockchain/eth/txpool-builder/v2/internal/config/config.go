@@ -16,6 +16,7 @@ import (
 	"txpool-builder/v2/internal/model"
 )
 
+// Load keeps config assembly in one place so startup cost and failure modes stay obvious.
 func Load(args []string) (model.Config, error) {
 	fs := flag.NewFlagSet("txpool-builder-v2", flag.ContinueOnError)
 	fs.SetOutput(ioDiscard{})
@@ -90,6 +91,7 @@ func Load(args []string) (model.Config, error) {
 	return cfg, nil
 }
 
+// Validate blocks unsafe settings before the service starts consuming resources.
 func Validate(cfg model.Config) error {
 	switch {
 	case cfg.ListenAddr == "":
@@ -136,12 +138,14 @@ func Validate(cfg model.Config) error {
 	return nil
 }
 
+// Digest fingerprints config so replay and audit can compare like-for-like runs.
 func Digest(cfg model.Config) string {
 	b, _ := json.Marshal(cfg)
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
 }
 
+// parseBigInt keeps config numerics in exact integer form so limits stay stable.
 func parseBigInt(s string) *big.Int {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -159,6 +163,7 @@ func parseBigInt(s string) *big.Int {
 	return nil
 }
 
+// firstNonEmpty preserves flag-over-env precedence without extra branching.
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
@@ -168,6 +173,7 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
+// durationEnv keeps timeout and cadence settings in one parsing rule.
 func durationEnv(key string, fallback time.Duration) time.Duration {
 	if v := os.Getenv(key); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
@@ -177,6 +183,7 @@ func durationEnv(key string, fallback time.Duration) time.Duration {
 	return fallback
 }
 
+// intEnv lets integer bounds come from environment without duplicating parsing.
 func intEnv(key string, fallback int) int {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -186,6 +193,7 @@ func intEnv(key string, fallback int) int {
 	return fallback
 }
 
+// int64Env keeps byte and size limits consistent across flags and env vars.
 func int64Env(key string, fallback int64) int64 {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
@@ -195,6 +203,7 @@ func int64Env(key string, fallback int64) int64 {
 	return fallback
 }
 
+// uint64Env keeps gas-like bounds unsigned so the type matches the domain.
 func uint64Env(key string, fallback uint64) uint64 {
 	if v := os.Getenv(key); v != "" {
 		if n, err := strconv.ParseUint(v, 10, 64); err == nil {
@@ -204,6 +213,7 @@ func uint64Env(key string, fallback uint64) uint64 {
 	return fallback
 }
 
+// boolEnv accepts the common on/off forms operators actually use.
 func boolEnv(key string, fallback bool) bool {
 	if v := os.Getenv(key); v != "" {
 		switch strings.ToLower(strings.TrimSpace(v)) {
@@ -218,8 +228,10 @@ func boolEnv(key string, fallback bool) bool {
 
 type ioDiscard struct{}
 
+// Write drops parser noise so flag parsing stays quiet in CLI and tests.
 func (ioDiscard) Write(p []byte) (int, error) { return len(p), nil }
 
+// max avoids an extra helper dependency for the default worker count.
 func max(a, b int) int {
 	if a > b {
 		return a
