@@ -5,6 +5,7 @@ import com.kofiska.solana.orchestrator.ports.AuditPublisher
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerRecord}
 
 import java.util.Properties
+import java.util.concurrent.TimeUnit
 import scala.concurrent.{ExecutionContext, Future, blocking}
 
 final class KafkaAuditPublisher(bootstrapServers: String, topic: String)(implicit ec: ExecutionContext)
@@ -15,7 +16,7 @@ final class KafkaAuditPublisher(bootstrapServers: String, topic: String)(implici
   override def publish(event: TransitionEvent): Future[Unit] =
     Future(blocking {
       val record = new ProducerRecord[String, String](topic, event.requestId, toJson(event))
-      producer.send(record).get()
+      producer.send(record).get(5, TimeUnit.SECONDS)
       ()
     })
 
@@ -34,7 +35,7 @@ final class KafkaAuditPublisher(bootstrapServers: String, topic: String)(implici
   private def toJson(event: TransitionEvent): String =
     {
       val hashes = event.sourceHashes.map(value => quote(value)).mkString(",")
-      s"""{"trace_id":${quote(event.traceId)},"request_id":${quote(event.requestId)},"decision_id":${quote(event.decisionId)},"terminal_state":${quote(event.terminalState)},"reason_code":${quote(event.reasonCode)},"model_version":${quote(event.modelVersion)},"route_id":${stringOrNull(event.routeId)},"slot":${event.slot},"quote_age":${event.quoteAge},"source_hashes":[$hashes],"stage":${quote(event.stage)},"latency_ms":${event.latencyMs},"bytes_in":${event.bytesIn},"bytes_out":${event.bytesOut},"success":${event.success}}"""
+      s"""{"schema_version":${quote(event.schemaVersion)},"trace_id":${quote(event.traceId)},"request_id":${quote(event.requestId)},"decision_id":${quote(event.decisionId)},"terminal_state":${quote(event.terminalState)},"reason_code":${quote(event.reasonCode)},"model_version":${quote(event.modelVersion)},"route_id":${stringOrNull(event.routeId)},"slot":${event.slot},"quote_age":${event.quoteAge},"source_hashes":[$hashes],"stage":${quote(event.stage)},"latency_ms":${event.latencyMs},"bytes_in":${event.bytesIn},"bytes_out":${event.bytesOut},"success":${event.success}}"""
     }
 
   private def stringOrNull(value: Option[String]): String =
@@ -45,4 +46,7 @@ final class KafkaAuditPublisher(bootstrapServers: String, topic: String)(implici
 
   private def escape(value: String): String =
     value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+  def close(): Unit =
+    producer.close()
 }

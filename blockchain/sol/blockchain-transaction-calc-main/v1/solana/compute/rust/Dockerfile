@@ -1,4 +1,4 @@
-FROM rust:1.82-slim AS builder
+FROM rust:1.82-slim@sha256:1111c28d995d06a7863ba6cea3b3dcb87bebe65af8ec5517caaf2c8c26f38010 AS builder
 
 WORKDIR /workspace/v1
 
@@ -9,12 +9,12 @@ WORKDIR /workspace/v1/solana/compute/rust
 
 RUN cargo build --release
 
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates bash \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

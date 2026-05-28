@@ -8,6 +8,7 @@ import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.should.Matchers
 
 import java.util.concurrent.ConcurrentHashMap
+import scala.collection.concurrent.TrieMap
 import scala.concurrent.{ExecutionContext, Future}
 
 final class RequestWorkflowSpec extends AsyncFlatSpec with Matchers {
@@ -58,7 +59,7 @@ final class RequestWorkflowSpec extends AsyncFlatSpec with Matchers {
     val repository = new InMemoryDecisionRepository
     val cache = new InMemoryDedupeCache
     val audit = new RecordingAuditPublisher
-    val workflow = new RequestWorkflow(new AcceptGateway, repository, cache, audit)
+    val workflow = new RequestWorkflow(new AcceptGateway, repository, cache, audit, dedupeTtlSeconds = 3600)
 
     workflow.process(context()).map { result =>
       result.terminalState shouldBe TerminalState.Accept
@@ -77,7 +78,7 @@ final class RequestWorkflowSpec extends AsyncFlatSpec with Matchers {
     val repository = new InMemoryDecisionRepository
     val cache = new InMemoryDedupeCache
     val audit = new RecordingAuditPublisher
-    val workflow = new RequestWorkflow(new FailingGateway, repository, cache, audit)
+    val workflow = new RequestWorkflow(new FailingGateway, repository, cache, audit, dedupeTtlSeconds = 3600)
 
     val cached = DecisionResult(
       requestId = "req-1",
@@ -86,13 +87,14 @@ final class RequestWorkflowSpec extends AsyncFlatSpec with Matchers {
       reasonCode = "ACCEPTED",
       actionability = Actionability.Actionable,
       bestRouteId = Some("route-a"),
-      expectedOutput = Some("1016.200000"),
-      feeCost = Some("0.780000"),
-      slippageCost = Some("1.070000"),
-      breakevenMargin = Some("14.350000"),
-      evEstimate = Some("13.700000"),
-      evLowerBound = Some("13.200000"),
-      riskScore = Some("0.001700"),
+      sourceHashes = Vector("hash-a", "hash-b"),
+      expectedOutput = Some(BigDecimal("1016.200000")),
+      feeCost = Some(BigDecimal("0.780000")),
+      slippageCost = Some(BigDecimal("1.070000")),
+      breakevenMargin = Some(BigDecimal("14.350000")),
+      evEstimate = Some(BigDecimal("13.700000")),
+      evLowerBound = Some(BigDecimal("13.200000")),
+      riskScore = Some(BigDecimal("0.001700")),
       freshnessValid = true
     )
 
@@ -108,19 +110,19 @@ final class RequestWorkflowSpec extends AsyncFlatSpec with Matchers {
     }
   }
 
-  it should "fail closed when dedupe exists but the terminal row is missing" in {
+  it should "return a duplicate-in-flight failure when the terminal row is missing" in {
     val repository = new InMemoryDecisionRepository
     val cache = new InMemoryDedupeCache
     val audit = new RecordingAuditPublisher
-    val workflow = new RequestWorkflow(new FailingGateway, repository, cache, audit)
+    val workflow = new RequestWorkflow(new FailingGateway, repository, cache, audit, dedupeTtlSeconds = 3600)
 
     cache.state.put("req-1", "decision-1")
 
     workflow.process(context()).map { result =>
       result.terminalState shouldBe TerminalState.Failed
-      result.reasonCode shouldBe "DEDUPED_BUT_MISSING_TERMINAL_RECORD"
-      Option(repository.state.get("req-1")).get.terminalState shouldBe TerminalState.Failed
-      audit.events.head.stage shouldBe "terminal"
+      result.reasonCode shouldBe "DUPLICATE_INFLIGHT_REQUEST"
+      repository.state.get("req-1") shouldBe null
+      audit.events shouldBe empty
       succeed
     }
   }
@@ -137,13 +139,25 @@ final class RequestWorkflowSpec extends AsyncFlatSpec with Matchers {
 
   private final class InMemoryDecisionRepository extends DecisionRepository {
     val state = new ConcurrentHashMap[String, DecisionResult]()
+    val audit = TrieMap.empty[(String, String), TransitionEvent]
+    val published = TrieMap.empty[(String, String), Boolean]
 
     override def find(requestId: String): Future[Option[DecisionResult]] =
       Future.successful(Option(state.get(requestId)))
 
-    override def upsert(ctx: RequestContext, result: DecisionResult): Future[Unit] =
+    override def upsert(ctx: RequestContext, result: DecisionResult, event: TransitionEvent): Future[Unit] =
       Future.successful {
-        state.put(ctx.requestId, result)
+        state.putIfAbsent(ctx.requestId, result)
+        audit.putIfAbsent((ctx.requestId, result.decisionId), event)
+        ()
+      }
+
+    override def pendingAudit(limit: Int): Future[Vector[TransitionEvent]] =
+      Future.successful(audit.collect { case (key, event) if !published.contains(key) => event }.take(limit).toVector)
+
+    override def markAuditPublished(requestId: String, decisionId: String): Future[Unit] =
+      Future.successful {
+        published.put((requestId, decisionId), true)
         ()
       }
   }
@@ -153,6 +167,9 @@ final class RequestWorkflowSpec extends AsyncFlatSpec with Matchers {
 
     override def get(requestId: String): Future[Option[String]] =
       Future.successful(Option(state.get(requestId)))
+
+    override def claim(requestId: String, marker: String, ttlSeconds: Long): Future[Boolean] =
+      Future.successful(state.putIfAbsent(requestId, marker) == null)
 
     override def put(requestId: String, decisionId: String, ttlSeconds: Long): Future[Unit] =
       Future.successful {

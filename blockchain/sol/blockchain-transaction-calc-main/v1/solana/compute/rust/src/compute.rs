@@ -23,6 +23,9 @@ enum LifecycleStage {
     Terminal,
 }
 
+const MAX_ROUTE_CANDIDATES: usize = 16;
+const MAX_HOP_COUNT: u32 = 8;
+
 pub fn evaluate(request: ComputeRequest) -> Result<ComputeResponse, ComputeError> {
     let started = Instant::now();
     debug!(stage = ?LifecycleStage::Received, request_id = %request.request_id, "compute stage");
@@ -102,19 +105,47 @@ pub fn evaluate(request: ComputeRequest) -> Result<ComputeResponse, ComputeError
     .with_economics(economics))
 }
 
-fn normalize(request: ComputeRequest) -> Result<ComputeRequest, ComputeError> {
-    if request.request_id.is_empty()
-        || request.dedupe_key.is_empty()
-        || request.trace_id.is_empty()
-        || request.model_version.is_empty()
-        || request.token_in.is_empty()
-        || request.token_out.is_empty()
-        || request.amount_in <= 0.0
-    {
+fn normalize(mut request: ComputeRequest) -> Result<ComputeRequest, ComputeError> {
+    trim_required(&mut request.request_id)?;
+    trim_required(&mut request.dedupe_key)?;
+    trim_required(&mut request.trace_id)?;
+    trim_required(&mut request.model_version)?;
+    trim_required(&mut request.token_in)?;
+    trim_required(&mut request.token_out)?;
+
+    if !request.amount_in.is_finite() || request.amount_in <= 0.0 {
         return Err(ComputeError::InvalidRequest);
     }
 
+    if request.route_candidates.len() > MAX_ROUTE_CANDIDATES {
+        return Err(ComputeError::TooManyRouteCandidates);
+    }
+
+    if let Some(route_id) = request.route_id.as_mut() {
+        trim_required(route_id)?;
+    }
+
+    let mut normalized_routes = Vec::with_capacity(request.route_candidates.len());
+    for mut candidate in request.route_candidates.drain(..) {
+        trim_required(&mut candidate.route_id)?;
+        trim_required(&mut candidate.venue)?;
+        if candidate.hop_count == 0 || candidate.hop_count > MAX_HOP_COUNT {
+            return Err(ComputeError::RouteHopCountTooLarge);
+        }
+        normalized_routes.push(candidate);
+    }
+    request.route_candidates = normalized_routes;
+
     Ok(request)
+}
+
+fn trim_required(value: &mut String) -> Result<(), ComputeError> {
+    let trimmed = value.trim().to_string();
+    if trimmed.is_empty() {
+        return Err(ComputeError::InvalidRequest);
+    }
+    *value = trimmed;
+    Ok(())
 }
 
 enum RoutePool<'a> {

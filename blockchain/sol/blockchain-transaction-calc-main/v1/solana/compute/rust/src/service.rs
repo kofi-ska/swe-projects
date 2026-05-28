@@ -26,5 +26,10 @@ impl ComputeService for ComputeServiceImpl {
 }
 
 fn status_for_error(error: ComputeError) -> Status {
-    Status::invalid_argument(error.to_string())
+    match error {
+        ComputeError::InvalidRequest => Status::invalid_argument(error.to_string()),
+        ComputeError::TooManyRouteCandidates | ComputeError::RouteHopCountTooLarge => {
+            Status::resource_exhausted(error.to_string())
+        }
+    }
 }

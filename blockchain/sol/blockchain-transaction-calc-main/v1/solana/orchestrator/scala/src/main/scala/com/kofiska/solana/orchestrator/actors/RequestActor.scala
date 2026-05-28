@@ -5,6 +5,8 @@ import akka.actor.typed.scaladsl.Behaviors
 import com.kofiska.solana.orchestrator.domain.{Actionability, DecisionResult, RequestContext, TerminalState}
 import com.kofiska.solana.orchestrator.service.RequestWorkflow
 
+import java.nio.charset.StandardCharsets
+import java.util.UUID
 import scala.util.{Failure, Success}
 
 object RequestActor {
@@ -31,11 +33,12 @@ object RequestActor {
         case WorkflowFailed(ctx, reason, replyTo) =>
           replyTo ! DecisionResult(
             requestId = ctx.requestId,
-            decisionId = java.util.UUID.randomUUID().toString,
+            decisionId = UUID.nameUUIDFromBytes(s"${ctx.requestId}:${ctx.modelVersion}:WORKFLOW_FAILED".getBytes(StandardCharsets.UTF_8)).toString,
             terminalState = TerminalState.Failed,
             reasonCode = if (reason.nonEmpty) reason else "WORKFLOW_FAILED",
             actionability = Actionability.NonActionable,
             bestRouteId = ctx.routeId,
+            sourceHashes = ctx.sourceHashes,
             expectedOutput = None,
             feeCost = None,
             slippageCost = None,

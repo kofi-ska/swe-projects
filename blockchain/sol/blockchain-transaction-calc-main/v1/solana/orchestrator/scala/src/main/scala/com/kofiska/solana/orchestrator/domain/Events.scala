@@ -1,6 +1,7 @@
 package com.kofiska.solana.orchestrator.domain
 
 final case class TransitionEvent(
+  schemaVersion: String,
   traceId: String,
   requestId: String,
   decisionId: String,
@@ -17,4 +18,3 @@ final case class TransitionEvent(
   bytesOut: Long,
   success: Boolean
 )
-

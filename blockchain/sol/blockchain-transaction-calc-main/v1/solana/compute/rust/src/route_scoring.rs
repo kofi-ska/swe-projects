@@ -17,7 +17,12 @@ pub fn best_route(amount_in: f64, routes: &[ComputeRouteCandidate]) -> Option<Ro
     routes
         .iter()
         .map(|route| score_route(amount_in, route))
-        .max_by(|left, right| left.score.total_cmp(&right.score))
+        .max_by(|left, right| {
+            left.score
+                .total_cmp(&right.score)
+                .then_with(|| right.hop_count.cmp(&left.hop_count))
+                .then_with(|| right.route_id.cmp(&left.route_id))
+        })
 }
 
 pub fn score_route(amount_in: f64, route: &ComputeRouteCandidate) -> RouteScore {

@@ -12,6 +12,7 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-actor-testkit-typed" % "2.8.5" % Test,
   "com.typesafe.akka" %% "akka-stream" % "2.8.5",
   "com.typesafe.akka" %% "akka-slf4j" % "2.8.5",
+  "com.zaxxer" % "HikariCP" % "5.1.0",
   "com.thesamet.scalapb" %% "scalapb-runtime" % "0.11.15",
   "com.thesamet.scalapb" %% "scalapb-runtime-grpc" % "0.11.15",
   "org.postgresql" % "postgresql" % "42.7.4",

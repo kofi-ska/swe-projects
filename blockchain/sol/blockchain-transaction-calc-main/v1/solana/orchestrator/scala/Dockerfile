@@ -1,4 +1,4 @@
-FROM eclipse-temurin:17-jdk-jammy
+FROM eclipse-temurin:17-jdk-jammy@sha256:beabb759e6f9653c843958d1d1f5cecb881dfb85aa6081e2bef099ab1260344e
 
 ENV DEBIAN_FRONTEND=noninteractive
 

@@ -2,6 +2,7 @@ use solana_compute::compute;
 use solana_compute::freshness;
 use solana_compute::proto::solana::v1::compute_service_server::ComputeService;
 use solana_compute::proto::solana::v1::{Actionability, EvaluateSwapRequest, TerminalState};
+use solana_compute::error::ComputeError;
 use solana_compute::route_scoring;
 use solana_compute::service::ComputeServiceImpl;
 use solana_compute::source_truth::{self, SourceTruthState};
@@ -102,7 +103,7 @@ async fn positive_routes_accept_and_negative_routes_reject() {
     reject.route_candidates = vec![ComputeRouteCandidate {
         route_id: "route-c".to_string(),
         venue: "aggregator".to_string(),
-        hop_count: 12,
+        hop_count: 8,
     }];
 
     let response = compute::evaluate(reject).expect("reject response");
@@ -149,4 +150,32 @@ async fn grpc_service_matches_compute_engine() {
     assert_eq!(response.terminal_state, TerminalState::Accept as i32);
     assert_eq!(response.actionability, Actionability::Actionable as i32);
     assert_eq!(response.request_id, "req-2");
+}
+
+#[test]
+fn oversized_route_sets_are_rejected_before_compute() {
+    let mut request = base_request();
+    request.route_candidates = (0..17)
+        .map(|index| ComputeRouteCandidate {
+            route_id: format!("route-{index}"),
+            venue: "direct".to_string(),
+            hop_count: 1,
+        })
+        .collect();
+
+    let error = compute::evaluate(request).expect_err("route limit");
+    assert!(matches!(error, ComputeError::TooManyRouteCandidates));
+}
+
+#[test]
+fn invalid_hop_counts_are_rejected_before_compute() {
+    let mut request = base_request();
+    request.route_candidates = vec![ComputeRouteCandidate {
+        route_id: "route-z".to_string(),
+        venue: "direct".to_string(),
+        hop_count: 0,
+    }];
+
+    let error = compute::evaluate(request).expect_err("hop count");
+    assert!(matches!(error, ComputeError::RouteHopCountTooLarge));
 }

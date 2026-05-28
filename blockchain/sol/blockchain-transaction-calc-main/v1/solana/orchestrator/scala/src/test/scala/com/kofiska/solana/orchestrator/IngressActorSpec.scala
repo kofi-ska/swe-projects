@@ -9,6 +9,7 @@ import com.kofiska.solana.v1.{Actionability => ProtoActionability, EvaluateSwapR
 import org.scalatest.wordspec.AnyWordSpecLike
 
 import java.util.concurrent.ConcurrentHashMap
+import scala.collection.concurrent.TrieMap
 import scala.concurrent.Future
 
 final class IngressActorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
@@ -17,7 +18,7 @@ final class IngressActorSpec extends ScalaTestWithActorTestKit with AnyWordSpecL
       val repository = new InMemoryDecisionRepository
       val cache = new InMemoryDedupeCache
       val audit = new RecordingAuditPublisher
-      val workflow = new RequestWorkflow(new AcceptGateway, repository, cache, audit)
+      val workflow = new RequestWorkflow(new AcceptGateway, repository, cache, audit, dedupeTtlSeconds = 3600)
       val ingress = spawn(IngressActor(workflow))
       val replyTo = createTestProbe[DecisionResult]()
 
@@ -76,13 +77,25 @@ final class IngressActorSpec extends ScalaTestWithActorTestKit with AnyWordSpecL
 
   private final class InMemoryDecisionRepository extends DecisionRepository {
     val state = new ConcurrentHashMap[String, DecisionResult]()
+    val audit = TrieMap.empty[(String, String), TransitionEvent]
+    val published = TrieMap.empty[(String, String), Boolean]
 
     override def find(requestId: String): Future[Option[DecisionResult]] =
       Future.successful(Option(state.get(requestId)))
 
-    override def upsert(ctx: RequestContext, result: DecisionResult): Future[Unit] =
+    override def upsert(ctx: RequestContext, result: DecisionResult, event: TransitionEvent): Future[Unit] =
       Future.successful {
-        state.put(ctx.requestId, result)
+        state.putIfAbsent(ctx.requestId, result)
+        audit.putIfAbsent((ctx.requestId, result.decisionId), event)
+        ()
+      }
+
+    override def pendingAudit(limit: Int): Future[Vector[TransitionEvent]] =
+      Future.successful(audit.collect { case (key, event) if !published.contains(key) => event }.take(limit).toVector)
+
+    override def markAuditPublished(requestId: String, decisionId: String): Future[Unit] =
+      Future.successful {
+        published.put((requestId, decisionId), true)
         ()
       }
   }
@@ -92,6 +105,9 @@ final class IngressActorSpec extends ScalaTestWithActorTestKit with AnyWordSpecL
 
     override def get(requestId: String): Future[Option[String]] =
       Future.successful(Option(state.get(requestId)))
+
+    override def claim(requestId: String, marker: String, ttlSeconds: Long): Future[Boolean] =
+      Future.successful(state.putIfAbsent(requestId, marker) == null)
 
     override def put(requestId: String, decisionId: String, ttlSeconds: Long): Future[Unit] =
       Future.successful {
