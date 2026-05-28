@@ -3,7 +3,6 @@ package com.kofiska.solana.orchestrator
 import akka.actor.typed.ActorSystem
 import com.kofiska.solana.orchestrator.actors.IngressActor
 import com.kofiska.solana.orchestrator.config.AppConfig
-import com.kofiska.solana.orchestrator.domain.RequestContext
 import com.kofiska.solana.orchestrator.infra.grpc.GrpcComputeGateway
 import com.kofiska.solana.orchestrator.infra.postgres.JdbcDecisionRepository
 import com.kofiska.solana.orchestrator.infra.redpanda.KafkaAuditPublisher

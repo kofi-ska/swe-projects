@@ -1,12 +1,14 @@
 pub mod breakeven;
 pub mod compute;
-pub mod ev;
 pub mod error;
+pub mod ev;
 pub mod fee;
 pub mod freshness;
+pub mod proto;
 pub mod quote;
 pub mod risk;
 pub mod route_scoring;
+pub mod service;
 pub mod slippage;
 pub mod source_truth;
 pub mod types;

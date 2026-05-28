@@ -1,0 +1,112 @@
+package com.kofiska.solana.orchestrator
+
+import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
+import com.kofiska.solana.orchestrator.actors.IngressActor
+import com.kofiska.solana.orchestrator.domain._
+import com.kofiska.solana.orchestrator.ports.{AuditPublisher, ComputeGateway, DecisionRepository, DedupeCache}
+import com.kofiska.solana.orchestrator.service.RequestWorkflow
+import com.kofiska.solana.v1.{Actionability => ProtoActionability, EvaluateSwapResponse, TerminalState => ProtoTerminalState}
+import org.scalatest.wordspec.AnyWordSpecLike
+
+import java.util.concurrent.ConcurrentHashMap
+import scala.concurrent.Future
+
+final class IngressActorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
+  "IngressActor" should {
+    "forward a request through the workflow and return a terminal decision" in {
+      val repository = new InMemoryDecisionRepository
+      val cache = new InMemoryDedupeCache
+      val audit = new RecordingAuditPublisher
+      val workflow = new RequestWorkflow(new AcceptGateway, repository, cache, audit)
+      val ingress = spawn(IngressActor(workflow))
+      val replyTo = createTestProbe[DecisionResult]()
+
+      ingress ! IngressActor.Submit(requestContext(), replyTo.ref)
+
+      val result = replyTo.receiveMessage()
+      result.terminalState shouldBe TerminalState.Accept
+      result.actionability shouldBe Actionability.Actionable
+      repository.state.get("req-1").terminalState shouldBe TerminalState.Accept
+      audit.events.head.stage shouldBe "terminal"
+    }
+  }
+
+  private def requestContext(): RequestContext =
+    RequestContext(
+      requestId = "req-1",
+      dedupeKey = "dedupe-1",
+      traceId = "trace-1",
+      modelVersion = "v1",
+      tokenIn = "USDC",
+      tokenOut = "SOL",
+      amountIn = "1000",
+      routeId = Some("route-a"),
+      slot = 100,
+      quoteAge = 1,
+      sourceHashes = Vector("hash-a", "hash-b"),
+      routeCandidates = Vector(
+        RouteCandidateInput("route-a", "direct", 1),
+        RouteCandidateInput("route-b", "aggregator", 4)
+      )
+    )
+
+  private final class AcceptGateway extends ComputeGateway {
+    override def evaluate(request: RequestContext): Future[EvaluateSwapResponse] =
+      Future.successful(
+        EvaluateSwapResponse(
+          requestId = request.requestId,
+          decisionId = "decision-1",
+          terminalState = ProtoTerminalState.ACCEPT,
+          actionability = ProtoActionability.ACTIONABLE,
+          reasonCode = "ACCEPTED",
+          bestRouteId = "route-a",
+          expectedOutput = "1016.200000",
+          feeCost = "0.780000",
+          slippageCost = "1.070000",
+          breakevenMargin = "14.350000",
+          evEstimate = "13.700000",
+          evLowerBound = "13.200000",
+          riskScore = "0.001700",
+          freshnessValid = true,
+          computeLatencyMs = 7L,
+          sourceHashes = Vector("hash-a", "hash-b")
+        )
+      )
+  }
+
+  private final class InMemoryDecisionRepository extends DecisionRepository {
+    val state = new ConcurrentHashMap[String, DecisionResult]()
+
+    override def find(requestId: String): Future[Option[DecisionResult]] =
+      Future.successful(Option(state.get(requestId)))
+
+    override def upsert(ctx: RequestContext, result: DecisionResult): Future[Unit] =
+      Future.successful {
+        state.put(ctx.requestId, result)
+        ()
+      }
+  }
+
+  private final class InMemoryDedupeCache extends DedupeCache {
+    val state = new ConcurrentHashMap[String, String]()
+
+    override def get(requestId: String): Future[Option[String]] =
+      Future.successful(Option(state.get(requestId)))
+
+    override def put(requestId: String, decisionId: String, ttlSeconds: Long): Future[Unit] =
+      Future.successful {
+        state.put(requestId, decisionId)
+        ()
+      }
+  }
+
+  private final class RecordingAuditPublisher extends AuditPublisher {
+    val events = scala.collection.mutable.ArrayBuffer.empty[TransitionEvent]
+
+    override def publish(event: TransitionEvent): Future[Unit] =
+      Future.successful {
+        events += event
+        ()
+      }
+  }
+}
