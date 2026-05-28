@@ -1,17 +1,18 @@
 # v0
 
-This is the index. Read the linked excerpts in [`REALITY.md`](./REALITY.md).
+Thin index. Read [`REALITY.md`](./REALITY.md).
 
-- [What the code does](./REALITY.md#L1)
-- [Implementation details](./REALITY.md#L19)
-- [Testing claims](./REALITY.md#L35)
-- [Production / load claims](./REALITY.md#L43)
-- [Run instructions](./REALITY.md#L59)
+- [What it actually does](./REALITY.md#L1)
+- [Implementation shape](./REALITY.md#L13)
+- [Concurrency reality](./REALITY.md#L25)
+- [Testing reality](./REALITY.md#L39)
+- [Production claims vs reality](./REALITY.md#L51)
+- [Gaps to v1](./REALITY.md#L63)
 
 Short version:
-- in-process Scala toy logic
+- in-process Scala demo
+- immutable map calculus
+- local Futures for fan-out
 - no Rust boundary
-- no FFI / JNI / gRPC / REST offload
-- no measured cross-runtime cost
-- no real production load proof
-
+- no durable request lifecycle
+- no production proof

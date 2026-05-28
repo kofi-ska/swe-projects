@@ -1,4 +1,4 @@
 # v1
 
-See [`SPEC.md`](./SPEC.md) for the actual design.
-
+See [`REALITY.md`](./REALITY.md) for the actual design.
+See [`tokenomics.md`](./tokenomics.md) for the swap economics workload profile.

@@ -38,7 +38,7 @@ Unit tests validate addAmount and subtractAmount from the Calculator object with
 
 - **addAmount Function Tests:** Ensure correct addition and creation of entries.
 - **subtractAmount Function Tests:** Validate accurate subtraction and error handling for insufficient funds or non-existing accounts.
-- **Edge Cases Handled:** Tests for scenarios like non-existing addresses and insufficient funds.
+- **Edge Cases Handled:** Tests for non-existing addresses and insufficient funds.
 
 ### Production Capacity Planning
 
