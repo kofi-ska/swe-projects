@@ -23,7 +23,13 @@ final class GrpcComputeGateway(channel: ManagedChannel) extends ComputeGateway {
       slot = ctx.slot,
       quoteAge = ctx.quoteAge,
       sourceHashes = ctx.sourceHashes,
-      routeCandidates = Vector.empty[RouteCandidate]
+      routeCandidates = ctx.routeCandidates.map { candidate =>
+        RouteCandidate(
+          routeId = candidate.routeId,
+          venue = candidate.venue,
+          hopCount = candidate.hopCount
+        )
+      }
     )
 
     stub.evaluateSwap(request)
