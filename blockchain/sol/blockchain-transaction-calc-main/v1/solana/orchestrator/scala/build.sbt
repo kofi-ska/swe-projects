@@ -2,6 +2,8 @@ scalaVersion := "2.13.12"
 
 name := "solana-orchestrator"
 
+Compile / mainClass := Some("com.kofiska.solana.orchestrator.OrchestratorMain")
+
 Compile / PB.protoSources += baseDirectory.value / "../../../contracts"
 Compile / PB.targets := Seq(scalapb.gen() -> (Compile / sourceManaged).value)
 

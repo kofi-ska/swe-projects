@@ -1,18 +1,37 @@
 services:
   orchestrator:
     build:
-      context: ../../solana/orchestrator/scala
+      context: ../..
+      dockerfile: solana/orchestrator/scala/Dockerfile
+    restart: unless-stopped
+    environment:
+      COMPUTE_HOST: compute
+      COMPUTE_PORT: "50051"
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/decision_store
+      POSTGRES_USER: decision
+      POSTGRES_PASSWORD: decision
+      VALKEY_URI: redis://valkey:6379/0
+      AUDIT_BOOTSTRAP_SERVERS: redpanda:9092
+      AUDIT_TOPIC: solana.audit
     depends_on:
+      - compute
       - postgres
       - valkey
       - redpanda
 
   compute:
     build:
-      context: ../../solana/compute/rust
+      context: ../..
+      dockerfile: solana/compute/rust/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "50051:50051"
+    environment:
+      COMPUTE_ADDR: 0.0.0.0:50051
 
   postgres:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_DB: decision_store
       POSTGRES_USER: decision
@@ -25,6 +44,8 @@ services:
 
   valkey:
     image: valkey/valkey:8
+    restart: unless-stopped
+    command: ["valkey-server", "/usr/local/etc/valkey/valkey.conf"]
     ports:
       - "6379:6379"
     volumes:
@@ -33,6 +54,7 @@ services:
 
   redpanda:
     image: redpandadata/redpanda:latest
+    restart: unless-stopped
     command:
       - redpanda
       - start
