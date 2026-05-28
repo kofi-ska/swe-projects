@@ -2,7 +2,7 @@ package com.kofiska.solana.orchestrator.infra.grpc
 
 import com.kofiska.solana.orchestrator.domain.RequestContext
 import com.kofiska.solana.orchestrator.ports.ComputeGateway
-import com.kofiska.solana.v1.{ComputeServiceGrpc, EvaluateSwapRequest, EvaluateSwapResponse, RouteCandidate}
+import com.kofiska.solana.v1.decision.{ComputeServiceGrpc, EvaluateSwapRequest, EvaluateSwapResponse, RouteCandidate}
 
 import io.grpc.ManagedChannel
 import scala.concurrent.Future
@@ -21,7 +21,7 @@ final class GrpcComputeGateway(channel: ManagedChannel) extends ComputeGateway {
       amountIn = ctx.amountIn,
       routeId = ctx.routeId.getOrElse(""),
       slot = ctx.slot,
-      quoteAge = ctx.quoteAge,
+      quoteAge = ctx.quoteAge.toInt,
       sourceHashes = ctx.sourceHashes,
       routeCandidates = ctx.routeCandidates.map { candidate =>
         RouteCandidate(

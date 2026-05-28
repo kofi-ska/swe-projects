@@ -15,6 +15,7 @@ libraryDependencies ++= Seq(
   "com.zaxxer" % "HikariCP" % "5.1.0",
   "com.thesamet.scalapb" %% "scalapb-runtime" % "0.11.15",
   "com.thesamet.scalapb" %% "scalapb-runtime-grpc" % "0.11.15",
+  "io.grpc" % "grpc-netty-shaded" % "1.66.0",
   "org.postgresql" % "postgresql" % "42.7.4",
   "io.lettuce" % "lettuce-core" % "6.4.0.RELEASE",
   "org.apache.kafka" % "kafka-clients" % "3.8.1",

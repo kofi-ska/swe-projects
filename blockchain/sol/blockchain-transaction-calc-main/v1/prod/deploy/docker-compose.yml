@@ -78,7 +78,7 @@ services:
   redpanda:
     image: redpandadata/redpanda:v26.1.9@sha256:8cb52078690728e2b3d1507fc84eda4c07d4d59bd8fa241e9b1cc7eb7de096c9
     restart: unless-stopped
-    mem_limit: 1g
+    mem_limit: 640m
     cpus: 1.0
     command:
       - redpanda
@@ -87,7 +87,7 @@ services:
       - --smp
       - "1"
       - --memory
-      - "1G"
+      - "512M"
       - --reserve-memory
       - "0M"
       - --node-id
@@ -99,7 +99,6 @@ services:
       - PLAINTEXT://redpanda:9092
     volumes:
       - redpanda-data:/var/lib/redpanda/data
-      - ../audit/redpanda/redpanda.yaml:/etc/redpanda/redpanda.yaml
     healthcheck:
       test: ["CMD-SHELL", "rpk cluster health --api-urls http://127.0.0.1:9644"]
       interval: 10s

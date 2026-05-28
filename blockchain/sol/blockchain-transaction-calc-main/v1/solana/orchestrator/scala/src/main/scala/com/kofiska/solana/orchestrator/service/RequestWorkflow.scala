@@ -2,7 +2,7 @@ package com.kofiska.solana.orchestrator.service
 
 import com.kofiska.solana.orchestrator.domain._
 import com.kofiska.solana.orchestrator.ports.{AuditPublisher, ComputeGateway, DecisionRepository, DedupeCache}
-import com.kofiska.solana.v1.{Actionability => ProtoActionability, EvaluateSwapResponse, TerminalState => ProtoTerminalState}
+import com.kofiska.solana.v1.decision.{Actionability => ProtoActionability, EvaluateSwapResponse, TerminalState => ProtoTerminalState}
 
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -90,7 +90,7 @@ final class RequestWorkflow(
       reasonCode = response.reasonCode,
       actionability = actionability,
       bestRouteId = Option(response.bestRouteId).filter(_.nonEmpty),
-      sourceHashes = response.sourceHashes,
+      sourceHashes = response.sourceHashes.toVector,
       expectedOutput = decimalOption(response.expectedOutput),
       feeCost = decimalOption(response.feeCost),
       slippageCost = decimalOption(response.slippageCost),

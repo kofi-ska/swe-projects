@@ -27,4 +27,4 @@ ENV COMPUTE_HOST=compute \
     AUDIT_BOOTSTRAP_SERVERS=redpanda:9092 \
     AUDIT_TOPIC=solana.audit
 
-CMD ["sbt", "-Dsbt.color=false", "-batch", "runMain", "com.kofiska.solana.orchestrator.OrchestratorMain"]
+CMD ["sh", "-c", "exec sbt -Dsbt.color=false -batch run"]

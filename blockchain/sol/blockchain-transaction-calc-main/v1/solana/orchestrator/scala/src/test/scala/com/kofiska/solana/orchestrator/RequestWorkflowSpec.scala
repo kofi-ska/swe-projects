@@ -3,7 +3,7 @@ package com.kofiska.solana.orchestrator
 import com.kofiska.solana.orchestrator.domain._
 import com.kofiska.solana.orchestrator.ports.{AuditPublisher, ComputeGateway, DecisionRepository, DedupeCache}
 import com.kofiska.solana.orchestrator.service.RequestWorkflow
-import com.kofiska.solana.v1.{Actionability => ProtoActionability, EvaluateSwapResponse, TerminalState => ProtoTerminalState}
+import com.kofiska.solana.v1.decision.{Actionability => ProtoActionability, EvaluateSwapResponse, TerminalState => ProtoTerminalState}
 import org.scalatest.flatspec.AsyncFlatSpec
 import org.scalatest.matchers.should.Matchers
 
@@ -175,6 +175,19 @@ final class RequestWorkflowSpec extends AsyncFlatSpec with Matchers {
       Future.successful {
         state.put(requestId, decisionId)
         ()
+      }
+
+    override def delete(requestId: String): Future[Unit] =
+      Future.successful {
+        state.remove(requestId)
+        ()
+      }
+
+    override def scan(prefix: String, limit: Int): Future[Vector[String]] =
+      Future.successful {
+        state.keySet().toArray.toVector.collect {
+          case value: String if value.startsWith(prefix) => value
+        }.take(limit)
       }
   }
 

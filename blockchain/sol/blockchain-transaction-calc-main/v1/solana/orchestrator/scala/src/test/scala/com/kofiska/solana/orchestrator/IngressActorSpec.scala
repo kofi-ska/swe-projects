@@ -5,14 +5,17 @@ import com.kofiska.solana.orchestrator.actors.IngressActor
 import com.kofiska.solana.orchestrator.domain._
 import com.kofiska.solana.orchestrator.ports.{AuditPublisher, ComputeGateway, DecisionRepository, DedupeCache}
 import com.kofiska.solana.orchestrator.service.RequestWorkflow
-import com.kofiska.solana.v1.{Actionability => ProtoActionability, EvaluateSwapResponse, TerminalState => ProtoTerminalState}
+import com.kofiska.solana.v1.decision.{Actionability => ProtoActionability, EvaluateSwapResponse, TerminalState => ProtoTerminalState}
 import org.scalatest.wordspec.AnyWordSpecLike
 
 import java.util.concurrent.ConcurrentHashMap
 import scala.collection.concurrent.TrieMap
+import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 
 final class IngressActorSpec extends ScalaTestWithActorTestKit with AnyWordSpecLike {
+  implicit val ec: ExecutionContext = ExecutionContext.global
+
   "IngressActor" should {
     "forward a request through the workflow and return a terminal decision" in {
       val repository = new InMemoryDecisionRepository
@@ -113,6 +116,19 @@ final class IngressActorSpec extends ScalaTestWithActorTestKit with AnyWordSpecL
       Future.successful {
         state.put(requestId, decisionId)
         ()
+      }
+
+    override def delete(requestId: String): Future[Unit] =
+      Future.successful {
+        state.remove(requestId)
+        ()
+      }
+
+    override def scan(prefix: String, limit: Int): Future[Vector[String]] =
+      Future.successful {
+        state.keySet().toArray.toVector.collect {
+          case value: String if value.startsWith(prefix) => value
+        }.take(limit)
       }
   }
 

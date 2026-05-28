@@ -10,4 +10,5 @@ trait DecisionRepository {
   def upsert(ctx: RequestContext, result: DecisionResult, event: TransitionEvent): Future[Unit]
   def pendingAudit(limit: Int): Future[Vector[TransitionEvent]]
   def markAuditPublished(requestId: String, decisionId: String): Future[Unit]
+  def close(): Unit = ()
 }
