@@ -12,6 +12,7 @@ import com.kofiska.solana.orchestrator.service.{ReconciliationService, RequestWo
 import io.grpc.ManagedChannelBuilder
 
 import scala.concurrent.ExecutionContext
+import scala.concurrent.Await
 import scala.concurrent.duration._
 
 object OrchestratorMain {
@@ -64,5 +65,7 @@ object OrchestratorMain {
       decisionRepository.close()
       system.terminate()
     }
+
+    Await.result(system.whenTerminated, Duration.Inf)
   }
 }

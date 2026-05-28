@@ -32,6 +32,7 @@ services:
     mem_limit: 512m
     cpus: 1.0
     environment:
+      RUST_LOG: debug
       COMPUTE_ADDR: 0.0.0.0:50051
     healthcheck:
       test: ["CMD-SHELL", "bash -ec 'echo >/dev/tcp/127.0.0.1/50051'"]
