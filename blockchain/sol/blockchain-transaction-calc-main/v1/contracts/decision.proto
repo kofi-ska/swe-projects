@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package solana.v1;
+
+option java_multiple_files = true;
+option java_package = "com.kofiska.solana.v1";
+
+service ComputeService {
+  rpc EvaluateSwap (EvaluateSwapRequest) returns (EvaluateSwapResponse);
+}
+
+enum TerminalState {
+  TERMINAL_STATE_UNSPECIFIED = 0;
+  ACCEPT = 1;
+  DEFER = 2;
+  REJECT = 3;
+  FAILED = 4;
+}
+
+enum Actionability {
+  ACTIONABILITY_UNSPECIFIED = 0;
+  ACTIONABLE = 1;
+  NON_ACTIONABLE = 2;
+  STALE = 3;
+  CONFLICT = 4;
+}
+
+message RouteCandidate {
+  string route_id = 1;
+  string venue = 2;
+  uint32 hop_count = 3;
+}
+
+message EvaluateSwapRequest {
+  string request_id = 1;
+  string dedupe_key = 2;
+  string trace_id = 3;
+  string model_version = 4;
+  string token_in = 5;
+  string token_out = 6;
+  string amount_in = 7;
+  string route_id = 8;
+  uint64 slot = 9;
+  uint32 quote_age = 10;
+  repeated string source_hashes = 11;
+  repeated RouteCandidate route_candidates = 12;
+}
+
+message EvaluateSwapResponse {
+  string request_id = 1;
+  string decision_id = 2;
+  TerminalState terminal_state = 3;
+  Actionability actionability = 4;
+  string reason_code = 5;
+  string best_route_id = 6;
+  string expected_output = 7;
+  string fee_cost = 8;
+  string slippage_cost = 9;
+  string breakeven_margin = 10;
+  string ev_estimate = 11;
+  string ev_lower_bound = 12;
+  string risk_score = 13;
+  bool freshness_valid = 14;
+  uint64 compute_latency_ms = 15;
+  repeated string source_hashes = 16;
+}
