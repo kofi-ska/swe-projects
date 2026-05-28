@@ -1,0 +1,11 @@
+# Ignore directories created by IDEs and build tools
+.bloop/
+.bsp/
+.metals/
+.scala-build/
+.vscode/
+target/
+project/target/
+
+# Ignore specific files
+.DS_Store  # macOS specific file
