@@ -1,6 +1,7 @@
 # v0
 
 Thin index. Read [`REALITY.md`](./REALITY.md).
+Original doc: [`DOCS.md`](./DOCS.md)
 
 - [What it actually does](./REALITY.md#L1)
 - [Implementation shape](./REALITY.md#L13)
