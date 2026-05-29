@@ -1,0 +1,5 @@
+FROM ethereum/client-go:stable
+WORKDIR /root
+COPY entrypoint.geth.sh .
+RUN chmod +x entrypoint.geth.sh
+ENTRYPOINT ["./entrypoint.geth.sh"]

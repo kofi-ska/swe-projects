@@ -1,0 +1,113 @@
+services:
+  orchestrator:
+    build:
+      context: ../..
+      dockerfile: solana/orchestrator/scala/Dockerfile
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.50
+    depends_on:
+      compute:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    environment:
+      COMPUTE_HOST: compute
+      COMPUTE_PORT: "50051"
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/decision_store
+      POSTGRES_USER: decision
+      POSTGRES_PASSWORD: decision
+      VALKEY_URI: redis://valkey:6379/0
+      AUDIT_BOOTSTRAP_SERVERS: redpanda:9092
+      AUDIT_TOPIC: solana.audit
+  compute:
+    build:
+      context: ../..
+      dockerfile: solana/compute/rust/Dockerfile
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1.0
+    environment:
+      RUST_LOG: debug
+      COMPUTE_ADDR: 0.0.0.0:50051
+    healthcheck:
+      test: ["CMD-SHELL", "bash -ec 'echo >/dev/tcp/127.0.0.1/50051'"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+  postgres:
+    image: postgres:16@sha256:4b7183ac05f8ef417db21fd72d71047a4238340c261d3cc3ddb6d579ab5071ae
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1.0
+    environment:
+      POSTGRES_DB: decision_store
+      POSTGRES_USER: decision
+      POSTGRES_PASSWORD: decision
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../storage/postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U decision -d decision_store"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+  valkey:
+    image: valkey/valkey:8@sha256:9917e842cfc3220e4ac3e819eb98a975cc171eff5e532c79cb75558030eb9078
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    command: ["valkey-server", "/usr/local/etc/valkey/valkey.conf"]
+    volumes:
+      - valkey-data:/data
+      - ../cache/valkey/valkey.conf:/usr/local/etc/valkey/valkey.conf
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -h 127.0.0.1 ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+
+  redpanda:
+    image: redpandadata/redpanda:v26.1.9@sha256:8cb52078690728e2b3d1507fc84eda4c07d4d59bd8fa241e9b1cc7eb7de096c9
+    restart: unless-stopped
+    mem_limit: 640m
+    cpus: 1.0
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - "512M"
+      - --reserve-memory
+      - "0M"
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:9092
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health --api-urls http://127.0.0.1:9644"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  postgres-data:
+  valkey-data:
+  redpanda-data:

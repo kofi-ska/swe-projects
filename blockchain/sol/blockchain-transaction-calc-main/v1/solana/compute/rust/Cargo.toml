@@ -1,0 +1,17 @@
+[package]
+name = "solana-compute"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.48", features = ["macros", "rt-multi-thread", "signal"] }
+tonic = "0.12"
+prost = "0.13"
+prost-types = "0.13"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+
+[build-dependencies]
+tonic-build = "0.12"
