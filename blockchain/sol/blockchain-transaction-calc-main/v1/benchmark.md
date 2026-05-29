@@ -135,6 +135,59 @@ This is also the difference between `EV_estimate`, `EV_lower_bound`, and `EV_rea
 - The benchmark follows the lifecycle in `operational-tracking.md`: ingress, normalize, dedupe, classify, queue, dispatch, compute, persist, audit, complete, replay.
 - The benchmark realizes the decision economy described in `tokenomics.md`, not downstream execution P&L.
 
+## Benchmark Gaps
+
+The benchmark proves the control loop. It does not yet prove the economic envelope.
+
+### EV gaps
+
+- There is no sweep around `EV_lower_bound = 0`.
+- There is no measurement for the negative side of the gate, such as `EV_lower_bound = -ε`.
+- There is no measurement for marginal cases, such as `EV_lower_bound = +ε`.
+- There is no false-positive count for accepted requests that later prove economically invalid.
+- There is no false-negative count for deferred or rejected requests that would have cleared the gate.
+- There is no sensitivity curve for fee, slippage, risk, or freshness against EV.
+- There is no realized EV reconciliation, so the benchmark cannot tell whether positive decision EV maps to positive outcome EV.
+
+### Distribution gaps
+
+- The workload is shaped, not sampled from a live population.
+- The benchmark does not report EV percentiles across a realistic request mix.
+- The benchmark does not report route-count, hop-count, or quote-age distributions.
+- The benchmark does not report decision split by EV bucket.
+- The benchmark does not report latency by EV bucket.
+- The benchmark does not report repeated-run variance or confidence intervals.
+
+### Cost gaps
+
+- The benchmark does not measure cost per decision.
+- The benchmark does not measure cost per accepted decision.
+- The benchmark does not measure cost per audited terminal request.
+- The benchmark does not measure infra cost versus positive decision volume.
+- The benchmark does not measure whether positive decision EV clears operating cost with margin.
+
+### State-machine gaps
+
+- The benchmark proves terminal behavior on accept, defer, duplicate replay, and stale input.
+- It does not yet enumerate the full transition matrix under dependency failure.
+- It does not test crash-before-write, crash-after-write, or crash-after-audit.
+- It does not test replay after schema change or model version change.
+- It does not test clock skew or monotonicity drift.
+
+### Operational gaps
+
+- The benchmark does not report queue depth, worker utilization, or backlog age during the run.
+- It does not report cache hit rate or dedupe suppression rate for the benchmark scenarios.
+- It does not report audit lag or publish latency.
+- It does not break end-to-end latency into ingress, dedupe, compute, store, and audit components.
+
+### Comparative gaps
+
+- v0 has no comparable request envelope, replay contract, or EV gate.
+- v1 therefore cannot be compared to v0 on execution quality.
+- v0 only establishes that local map math exists; v1 establishes that a bounded decision system exists.
+- The benchmark therefore compares operational decisioning, not generalized trading performance.
+
 ## Stack-Level Readout
 
 ### Rust compute
@@ -195,7 +248,7 @@ It cannot tell you whether a bounded pre-trade service is viable.
 
 ## What Is Still Unproven
 
-This benchmark does not prove realized execution outcome.
+This benchmark does not prove realized execution outcome or economic viability under a live request population.
 
 `EV_realized` requires:
 
@@ -205,6 +258,10 @@ This benchmark does not prove realized execution outcome.
 - slippage versus realized-fill comparison
 
 It also does not prove production deployment viability at scale outside this local compose environment.
+It does not show whether positive decision EV is common enough to cover operating cost with margin.
+It does not show how often the gate should accept, defer, or reject in a real mix.
+It does not show whether the model stays calibrated near the threshold.
+It does not show whether the system survives repeated hot-key, stale-source, or duplicate-heavy traffic over time.
 
 So the benchmark supports this conclusion, and only this conclusion:
 
