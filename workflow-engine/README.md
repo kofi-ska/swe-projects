@@ -12,7 +12,7 @@ flowchart LR
   V3 --> PX[Reverse proxy / TLS]
 ```
 
-## What We Built
+## What was Built
 
 - `v1`: legacy baseline kept intact for compatibility and regression checks.
 - `v2`: production-shaped runtime with journaled commits, replayable projections, and durable state in the live path.
@@ -37,27 +37,6 @@ flowchart LR
 - **SLA**: service is provided on a best-effort commercial basis for the deployed environment, with the above SLOs as the operational goal rather than a hard warranty.
 - The ops snapshot is exposed from `v3` so operators can inspect the current SLI state without pulling raw logs.
 
-## Constraints
-
-- Specs, inputs, and effect targets are untrusted.
-- Guards are bounded and deterministic.
-- Effects are not executed inline with ingress.
-- File-backed stores are local/legacy support, not the public durability layer.
-- Public auth is fail-closed when the API key is missing.
-
-## Operational Risk
-
-- The public deployment is still intentionally simple.
-- The codebase favors clarity and bounded behavior over speculative abstraction.
-- The main remaining risk is operational scale, not core shape.
-- The public edge is safer now, but like any live service it still depends on correct secrets, TLS, database availability, and deployment hygiene.
-
-## Status
-
-- TypeScript checks pass.
-- Tests pass.
-- Compose is available for local and integration use.
-- GCP bootstrap is present for deployment.
 
 ## Docs
 
