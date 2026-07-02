@@ -10,6 +10,17 @@ This project demonstrates the implementation of multilevel parallel pattern libr
 
 - **Custom Library Parallel Program:** Utilizes a custom parallel pattern library designed to generalize the parallel pattern for a use case.
 
+## Lookahead
+
+This v0 repository is a benchmark base, not the final runtime. The implementation goal is to prove the pattern library direction that becomes v1: a bounded Erlang parallel runtime with explicit lifecycle, measurable overhead, and recovery semantics.
+
+- North star: convert structured parallel work into reusable execution patterns without hiding coordination cost.
+- Core risk: parallelism only helps when task granularity, data movement, and failure handling are controlled.
+- v0 purpose: establish baseline behaviour, benchmark methodology, and pattern fit.
+- v1 direction: durable job lifecycle, pattern selection, recovery, and bounded operational cost.
+
+For the full north star and execution constraints, see [`lookahead.md`](./lookahead.md).
+
 ### Parallel Pattern Libraries Developed
 
 - Farm
@@ -177,6 +188,5 @@ Docker is used for environment setup and cloud deployment. The tests evaluate pe
 For any questions or issues, please contact:
 
 - **Maintainer:** amedikusettor@gmail.com
-
 
 
