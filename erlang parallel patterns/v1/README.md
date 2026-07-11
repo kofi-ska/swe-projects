@@ -27,6 +27,7 @@ Standard Erlang processes handle execution; distributed Erlang handles transport
 - Supports worker-pool dispatch for farms with load-aware selection.
 - Runs on top of a separate distributed runtime layer that handles placement, transport, and node health.
 - Exposes metrics, logs, and traces for each work lifecycle and every terminal transition.
+- Writes measurement reports, benchmark outputs, and configuration snapshots to an artifact store outside the runtime critical path.
 
 ## 2. Non-Functional Requirements
 
@@ -131,6 +132,7 @@ Standard Erlang processes handle execution; distributed Erlang handles transport
 - **No coordinator omniscience**: admission and placement decisions come from local state, bounded registry data, and health hints, not from a fantasy of perfect global visibility.
 - **No semantic dependence on node identity**: nodes are execution targets and failure domains, not the owners of business semantics.
 - **No hidden durable queueing layer**: if durability is needed later, it is introduced as an explicit storage subsystem, not smuggled into coordinator mailboxes.
+- **No artifact-store-as-durability**: MinIO stores benchmark and measurement artifacts only; it is not a job store, replay log, queue, or source of terminal-state truth.
 - **No claim of perfect fairness**: fairness is approximated with quotas, priorities, and starvation detection, not promised as a mathematical guarantee.
 
 #### Non-goals for v1
@@ -139,9 +141,11 @@ Standard Erlang processes handle execution; distributed Erlang handles transport
 - Exactly-once delivery or exactly-once execution semantics.
 - Cross-node total ordering as a default mode.
 - Durable write-ahead recovery for every lifecycle event.
+- Cassandra-backed durability or any other durable job store.
 - Automatic healing of network partitions without operator involvement.
 - Unlimited fan-out, fan-in, or buffering.
 - Observability that captures every event at full fidelity under all loads.
+- Grafana dashboards as a v1 requirement.
 - A general-purpose workflow engine that supports arbitrary business process semantics.
 - A replacement for Erlang/OTP supervision or distributed Erlang itself.
 
@@ -205,6 +209,8 @@ flowchart TB
 - `Quota`: a per-tenant, per-job-class, or per-region cap on consumption.
 - `BackpressureState`: the current signal that downstream or upstream capacity is constrained.
 - `Telemetry`: the set of counters, histograms, spans, and structured events emitted by the runtime.
+- `MeasurementArtifact`: a report, benchmark result, config snapshot, or fault-injection output written after or alongside a run.
+- `ArtifactStore`: MinIO-compatible object storage used for measurement artifacts, not runtime durability.
 - `RejectionReason`: the classified reason a work item was not admitted, including `capacity`, `budget`, `policy`, `timeout`, `overload`, and `invalid_input`.
 
 ## 4. Data Flows
@@ -251,6 +257,7 @@ flowchart TB
 - **Policy engine**: applies retry, timeout, quota, ordering, and overload policy decisions.
 - **Registry**: correlates jobs, work items, child tasks, retries, node refs, and terminal outcomes.
 - **Telemetry adapter**: emits metrics, logs, spans, and counters for lifecycle and health.
+- **Measurement reporter**: records run summaries, benchmark results, and config snapshots to MinIO-compatible object storage.
 - **Distributed runtime adapter**: handles node discovery, transport, remote placement, and node-level health.
 - **Deployment plane**: hosts the runtime on one node or many nodes without changing library semantics.
 
@@ -285,6 +292,8 @@ flowchart TB
   R --> S["Remote Erlang Nodes"]
 
   J --> T["Metrics / Logs / Traces"]
+  J --> U["Measurement Reporter"]
+  U --> V["MinIO Artifacts"]
 ```
 
 ## 6. Low-Level Design
@@ -329,6 +338,7 @@ flowchart TB
 - join aggregator: settles child completion and performs join classification.
 - registry process: stores correlation and settlement lookup state.
 - telemetry adapter: emits operational signals without altering control flow.
+- measurement reporter: writes benchmark and validation artifacts without participating in admission, dispatch, or settlement.
 
 ### 6.2 Supervision Tree
 
@@ -378,6 +388,7 @@ Every message preserves:
 - stage ID where relevant
 - attempt number
 - trace ID
+- node ID where relevant
 
 ### 6.5 State Machine
 
@@ -568,15 +579,82 @@ flowchart TB
 
 ## 9. Deployment Approach
 
+### 9.1 Deployment sequence
+
 - Start on a single Erlang node to validate semantics, state transitions, and boundedness.
+- Package the same runtime artifact into a container image before distributed behavior is treated as stable.
+- Run Docker Compose first to validate multi-node Erlang distribution, observability, failure injection, and measurement artifact capture.
+- Move to k3s only after Compose runs show stable lifecycle correctness, boundedness, and observable failure handling.
 - Extend to distributed Erlang only after local lifecycle correctness is stable.
-- Use node-level worker placement to spread MIMD execution across cores and hosts.
-- Keep library semantics separate from runtime transport so deployment does not change behavior.
+- Keep library semantics separate from runtime transport so deployment does not change behavior between single-node, Compose, and k3s.
+
+### 9.2 Docker Compose baseline
+
+The first distributed deployment target is Docker Compose.
+
+Expected services:
+
+- `coordinator`
+- `worker-1`
+- `worker-2`
+- `worker-3`
+- `otel-collector`
+- `jaeger`
+- `prometheus`
+- `loki`
+- `promtail` or an equivalent log shipping path
+- `minio`
+
+Compose must make the following tests easy:
+
+- start one coordinator and multiple worker nodes from the same image
+- connect Erlang nodes through explicit names, cookies, and distribution ports
+- submit farm, pipeline, and fork-join work through the same region API
+- kill, restart, and scale worker containers during active load
+- observe node-down and worker-down reclassification without duplicate terminal settlement
+- confirm traces in Jaeger, metrics in Prometheus, structured logs in Loki, and reports in MinIO
+
+### 9.3 k3s target
+
+The second deployment target is k3s.
+
+Expected components:
+
+- coordinator `Deployment` or `StatefulSet`
+- worker `Deployment` or `StatefulSet`
+- `Service` objects for Erlang distribution and runtime endpoints
+- `ConfigMap` for runtime limits and telemetry configuration
+- `Secret` for the Erlang cookie and object-store credentials
+- `otel-collector`
+- `jaeger`
+- `prometheus`
+- `loki`
+- `promtail` or node/pod log collection equivalent
+- `minio` with persistent storage
+- readiness and liveness probes
+- graceful drain behavior on `SIGTERM`
+
+k3s validates orchestration behavior: pod DNS, rolling restarts, worker scaling, readiness during drain or overload, and resource limits that do not hide overload.
+
+### 9.4 Observability and artifacts
+
 - Use OTEL for tracing and Jaeger as the trace backend.
+- Use Prometheus for runtime metrics.
+- Use Loki for structured lifecycle logs.
+- Use MinIO for measurement artifacts: reports, benchmark outputs, config snapshots, and fault-injection results.
+- Do not use MinIO as job durability, a work queue, a replay log, or a settlement registry.
+- Do not require Grafana for v1; dashboards can be added later without changing runtime semantics.
 - Use metrics and logs alongside traces; do not rely on tracing alone.
-- If deployed on Kubernetes or GKE, treat workers, coordinators, and telemetry as distinct operational surfaces.
-- Make config, secrets, drain, rollout, and health checks first-class operational capabilities.
-- Preserve a graceful shutdown path so active regions can drain without losing terminal correctness.
+- Keep high-cardinality IDs such as `job_id`, `task_id`, and `trace_id` in structured log bodies, not as Loki labels.
+
+### 9.5 Container contract
+
+- The same image can run as a coordinator or worker based on configuration.
+- Runtime role, node name, Erlang cookie, distribution port range, telemetry endpoints, and object-store endpoint are configurable.
+- Health endpoints expose liveness and readiness.
+- Metrics are exposed on a scrapeable endpoint.
+- `SIGTERM` starts graceful drain where possible; hard shutdown must not create duplicate terminal settlement.
+- Config, secrets, drain, rollout, and health checks are first-class operational capabilities.
 
 ## 10. Adversarial Review
 Primary risks:
