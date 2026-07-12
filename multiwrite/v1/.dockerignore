@@ -1,0 +1,7 @@
+.git
+benchmarks/artifacts/outputs/*
+benchmarks/artifacts/manifests/*
+benchmarks/artifacts/profiles/*
+benchmarks/artifacts/traces/*
+benchmarks/artifacts/syscalls/*
+output/*

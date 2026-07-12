@@ -1,0 +1,12 @@
+run
+--writer=direct
+--profile=fixed
+--records=100000
+--max-bytes=67108864
+--max-duration=30s
+--record-size=32
+--seed=101
+--out=benchmarks/artifacts/outputs/local-direct-fixed.txt
+--manifest=benchmarks/artifacts/manifests/local-direct-fixed.json
+--durability=closed
+--overwrite=replace

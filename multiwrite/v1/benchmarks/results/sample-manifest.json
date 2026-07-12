@@ -1,0 +1,11 @@
+{
+  "schema_version": "multiwrite.v1.run.1",
+  "status": "completed",
+  "writer_strategy": "buffered",
+  "workload_profile": "fixed",
+  "seed": 101,
+  "records_written": 100000,
+  "bytes_written": 3200000,
+  "artifact_state": "final",
+  "note": "Shape example only. Generated manifests are written under benchmarks/artifacts/manifests."
+}

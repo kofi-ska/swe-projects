@@ -1,0 +1,16 @@
+run
+--writer=buffered
+--profile=tiny
+--records=10000
+--max-bytes=8388608
+--max-duration=15s
+--record-size=8
+--buffer-size=16384
+--seed=202
+--out=benchmarks/artifacts/outputs/compose-smoke.txt
+--manifest=benchmarks/artifacts/manifests/compose-smoke.json
+--cpuprofile=benchmarks/artifacts/profiles/compose-smoke.cpu.pprof
+--memprofile=benchmarks/artifacts/profiles/compose-smoke.mem.pprof
+--trace=benchmarks/artifacts/traces/compose-smoke.trace
+--durability=closed
+--overwrite=replace

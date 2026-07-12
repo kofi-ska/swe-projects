@@ -46,3 +46,41 @@ multiwrite run \
   --durability <closed|synced|committed> \
   --overwrite <fail|replace|version>
 ```
+
+## Run Locally
+
+From `multiwrite/v1`:
+
+```bash
+go run . run \
+  --writer=buffered \
+  --profile=fixed \
+  --records=100000 \
+  --max-bytes=67108864 \
+  --max-duration=30s \
+  --record-size=32 \
+  --buffer-size=16384 \
+  --seed=101 \
+  --out=benchmarks/artifacts/outputs/local-buffered-fixed.txt \
+  --manifest=benchmarks/artifacts/manifests/local-buffered-fixed.json \
+  --durability=closed \
+  --overwrite=replace
+```
+
+Run package benchmarks:
+
+```bash
+go test ./... -bench=. -benchmem
+```
+
+Run the bounded Compose smoke case:
+
+```bash
+docker compose run --rm multiwrite-smoke
+```
+
+Run the Compose direct and buffered comparison services:
+
+```bash
+docker compose --profile benchmark up --build --abort-on-container-exit
+```
