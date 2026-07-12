@@ -37,7 +37,8 @@ It replaces the v0 loop-only measurement with a manifest-driven run model that r
 ## Layout
 
 - `src/`: importable write engine package.
-- `cmd/multiwrite/`: CLI entrypoint.
+- `src/internal/multiwrite/`: engine implementation.
+- `src/cmd/multiwrite/`: CLI entrypoint.
 - `tests/`: external tests and benchmarks that import `src/`.
 - `benchmarks/`: benchmark configs, results, and generated artifacts.
 
@@ -61,7 +62,7 @@ multiwrite run \
 From `multiwrite/v1`:
 
 ```bash
-go run ./cmd/multiwrite run \
+go run ./src/cmd/multiwrite run \
   --writer=buffered \
   --profile=fixed \
   --records=100000 \

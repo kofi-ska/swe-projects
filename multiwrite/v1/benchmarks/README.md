@@ -27,7 +27,7 @@ go test ./... -bench=. -benchmem
 ```
 
 ```bash
-go run ./cmd/multiwrite run \
+go run ./src/cmd/multiwrite run \
   --writer=direct \
   --profile=fixed \
   --records=100000 \
@@ -42,7 +42,7 @@ go run ./cmd/multiwrite run \
 ```
 
 ```bash
-go run ./cmd/multiwrite run \
+go run ./src/cmd/multiwrite run \
   --writer=buffered \
   --profile=fixed \
   --records=100000 \

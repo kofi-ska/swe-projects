@@ -3,10 +3,9 @@ FROM golang:1.25-alpine AS build
 WORKDIR /src
 COPY go.mod ./
 COPY src ./src
-COPY cmd ./cmd
 COPY tests ./tests
 RUN go test ./...
-RUN go build -trimpath -o /out/multiwrite ./cmd/multiwrite
+RUN go build -trimpath -o /out/multiwrite ./src/cmd/multiwrite
 
 FROM alpine:3.22
 
