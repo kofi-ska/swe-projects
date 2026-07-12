@@ -1,111 +1,133 @@
+# Compose boundary
 services:
   multiwrite-smoke:
+    # Image
     build:
       context: .
       dockerfile: Dockerfile
-    image: multiwrite:v1
-    cpus: "1.0"
-    mem_limit: 256m
+    image: ${MULTIWRITE_IMAGE}
+
+    # Runtime envelope
+    cpus: ${MULTIWRITE_CPUS}
+    mem_limit: ${MULTIWRITE_MEMORY_LIMIT}
     environment:
-      GOMEMLIMIT: 192MiB
-      MULTIWRITE_ENV: compose
-      MULTIWRITE_CPU_LIMIT: "1.0"
-      MULTIWRITE_MEMORY_LIMIT: 256m
-      MULTIWRITE_VOLUME_KIND: bind
-      MULTIWRITE_IMAGE: multiwrite:v1
+      GOMEMLIMIT: ${MULTIWRITE_GOMEMLIMIT}
+      MULTIWRITE_ENV: ${MULTIWRITE_ENV}
+      MULTIWRITE_CPU_LIMIT: ${MULTIWRITE_CPUS}
+      MULTIWRITE_MEMORY_LIMIT: ${MULTIWRITE_MEMORY_LIMIT}
+      MULTIWRITE_VOLUME_KIND: ${MULTIWRITE_VOLUME_KIND}
+      MULTIWRITE_IMAGE: ${MULTIWRITE_IMAGE}
+
+    # Artifact mounts
     volumes:
-      - ./benchmarks/artifacts/outputs:/app/benchmarks/artifacts/outputs
-      - ./benchmarks/artifacts/manifests:/app/benchmarks/artifacts/manifests
-      - ./benchmarks/artifacts/profiles:/app/benchmarks/artifacts/profiles
-      - ./benchmarks/artifacts/traces:/app/benchmarks/artifacts/traces
-      - ./benchmarks/artifacts/syscalls:/app/benchmarks/artifacts/syscalls
+      - ${OUTPUT_DIR}:/app/benchmarks/artifacts/outputs
+      - ${MANIFEST_DIR}:/app/benchmarks/artifacts/manifests
+      - ${PROFILE_DIR}:/app/benchmarks/artifacts/profiles
+      - ${TRACE_DIR}:/app/benchmarks/artifacts/traces
+      - ${SYSCALL_DIR}:/app/benchmarks/artifacts/syscalls
+
+    # Workload
     command:
       - run
-      - --writer=buffered
-      - --profile=tiny
-      - --records=10000
-      - --max-bytes=8388608
-      - --max-duration=15s
-      - --record-size=8
-      - --buffer-size=16384
-      - --seed=202
-      - --out=benchmarks/artifacts/outputs/compose-smoke.txt
-      - --manifest=benchmarks/artifacts/manifests/compose-smoke.json
-      - --cpuprofile=benchmarks/artifacts/profiles/compose-smoke.cpu.pprof
-      - --memprofile=benchmarks/artifacts/profiles/compose-smoke.mem.pprof
-      - --trace=benchmarks/artifacts/traces/compose-smoke.trace
-      - --durability=closed
-      - --overwrite=replace
+      - --writer=${SMOKE_WRITER}
+      - --profile=${SMOKE_PROFILE}
+      - --records=${SMOKE_RECORDS}
+      - --max-bytes=${SMOKE_MAX_BYTES}
+      - --max-duration=${SMOKE_MAX_DURATION}
+      - --record-size=${SMOKE_RECORD_SIZE}
+      - --buffer-size=${SMOKE_BUFFER_SIZE}
+      - --seed=${SMOKE_SEED}
+      - --out=${SMOKE_OUTPUT}
+      - --manifest=${SMOKE_MANIFEST}
+      - --cpuprofile=${SMOKE_CPU_PROFILE}
+      - --memprofile=${SMOKE_MEM_PROFILE}
+      - --trace=${SMOKE_TRACE}
+      - --durability=${DURABILITY}
+      - --overwrite=${OVERWRITE_POLICY}
 
   multiwrite-direct:
-    image: multiwrite:v1
+    # Image
+    image: ${MULTIWRITE_IMAGE}
     build:
       context: .
       dockerfile: Dockerfile
     profiles:
       - benchmark
-    cpus: "1.0"
-    mem_limit: 256m
+
+    # Runtime envelope
+    cpus: ${MULTIWRITE_CPUS}
+    mem_limit: ${MULTIWRITE_MEMORY_LIMIT}
     environment:
-      GOMEMLIMIT: 192MiB
-      MULTIWRITE_ENV: compose
-      MULTIWRITE_CPU_LIMIT: "1.0"
-      MULTIWRITE_MEMORY_LIMIT: 256m
-      MULTIWRITE_VOLUME_KIND: bind
-      MULTIWRITE_IMAGE: multiwrite:v1
+      GOMEMLIMIT: ${MULTIWRITE_GOMEMLIMIT}
+      MULTIWRITE_ENV: ${MULTIWRITE_ENV}
+      MULTIWRITE_CPU_LIMIT: ${MULTIWRITE_CPUS}
+      MULTIWRITE_MEMORY_LIMIT: ${MULTIWRITE_MEMORY_LIMIT}
+      MULTIWRITE_VOLUME_KIND: ${MULTIWRITE_VOLUME_KIND}
+      MULTIWRITE_IMAGE: ${MULTIWRITE_IMAGE}
+
+    # Artifact mounts
     volumes:
-      - ./benchmarks/artifacts/outputs:/app/benchmarks/artifacts/outputs
-      - ./benchmarks/artifacts/manifests:/app/benchmarks/artifacts/manifests
-      - ./benchmarks/artifacts/profiles:/app/benchmarks/artifacts/profiles
-      - ./benchmarks/artifacts/traces:/app/benchmarks/artifacts/traces
-      - ./benchmarks/artifacts/syscalls:/app/benchmarks/artifacts/syscalls
+      - ${OUTPUT_DIR}:/app/benchmarks/artifacts/outputs
+      - ${MANIFEST_DIR}:/app/benchmarks/artifacts/manifests
+      - ${PROFILE_DIR}:/app/benchmarks/artifacts/profiles
+      - ${TRACE_DIR}:/app/benchmarks/artifacts/traces
+      - ${SYSCALL_DIR}:/app/benchmarks/artifacts/syscalls
+
+    # Workload
     command:
       - run
       - --writer=direct
-      - --profile=fixed
-      - --records=100000
-      - --max-bytes=67108864
-      - --max-duration=30s
-      - --record-size=32
-      - --seed=101
-      - --out=benchmarks/artifacts/outputs/compose-direct-fixed.txt
-      - --manifest=benchmarks/artifacts/manifests/compose-direct-fixed.json
-      - --durability=closed
-      - --overwrite=replace
+      - --profile=${BENCH_PROFILE}
+      - --records=${BENCH_RECORDS}
+      - --max-bytes=${BENCH_MAX_BYTES}
+      - --max-duration=${BENCH_MAX_DURATION}
+      - --record-size=${BENCH_RECORD_SIZE}
+      - --seed=${BENCH_SEED}
+      - --out=${BENCH_DIRECT_OUTPUT}
+      - --manifest=${BENCH_DIRECT_MANIFEST}
+      - --durability=${DURABILITY}
+      - --overwrite=${OVERWRITE_POLICY}
 
   multiwrite-buffered:
-    image: multiwrite:v1
+    # Image
+    image: ${MULTIWRITE_IMAGE}
     build:
       context: .
       dockerfile: Dockerfile
     profiles:
       - benchmark
-    cpus: "1.0"
-    mem_limit: 256m
+
+    # Runtime envelope
+    cpus: ${MULTIWRITE_CPUS}
+    mem_limit: ${MULTIWRITE_MEMORY_LIMIT}
     environment:
-      GOMEMLIMIT: 192MiB
-      MULTIWRITE_ENV: compose
-      MULTIWRITE_CPU_LIMIT: "1.0"
-      MULTIWRITE_MEMORY_LIMIT: 256m
-      MULTIWRITE_VOLUME_KIND: bind
-      MULTIWRITE_IMAGE: multiwrite:v1
+      GOMEMLIMIT: ${MULTIWRITE_GOMEMLIMIT}
+      MULTIWRITE_ENV: ${MULTIWRITE_ENV}
+      MULTIWRITE_CPU_LIMIT: ${MULTIWRITE_CPUS}
+      MULTIWRITE_MEMORY_LIMIT: ${MULTIWRITE_MEMORY_LIMIT}
+      MULTIWRITE_VOLUME_KIND: ${MULTIWRITE_VOLUME_KIND}
+      MULTIWRITE_IMAGE: ${MULTIWRITE_IMAGE}
+
+    # Artifact mounts
     volumes:
-      - ./benchmarks/artifacts/outputs:/app/benchmarks/artifacts/outputs
-      - ./benchmarks/artifacts/manifests:/app/benchmarks/artifacts/manifests
-      - ./benchmarks/artifacts/profiles:/app/benchmarks/artifacts/profiles
-      - ./benchmarks/artifacts/traces:/app/benchmarks/artifacts/traces
-      - ./benchmarks/artifacts/syscalls:/app/benchmarks/artifacts/syscalls
+      - ${OUTPUT_DIR}:/app/benchmarks/artifacts/outputs
+      - ${MANIFEST_DIR}:/app/benchmarks/artifacts/manifests
+      - ${PROFILE_DIR}:/app/benchmarks/artifacts/profiles
+      - ${TRACE_DIR}:/app/benchmarks/artifacts/traces
+      - ${SYSCALL_DIR}:/app/benchmarks/artifacts/syscalls
+
+    # Workload
     command:
       - run
       - --writer=buffered
-      - --profile=fixed
-      - --records=100000
-      - --max-bytes=67108864
-      - --max-duration=30s
-      - --record-size=32
-      - --buffer-size=16384
-      - --seed=101
-      - --out=benchmarks/artifacts/outputs/compose-buffered-fixed.txt
-      - --manifest=benchmarks/artifacts/manifests/compose-buffered-fixed.json
-      - --durability=closed
-      - --overwrite=replace
+      - --profile=${BENCH_PROFILE}
+      - --records=${BENCH_RECORDS}
+      - --max-bytes=${BENCH_MAX_BYTES}
+      - --max-duration=${BENCH_MAX_DURATION}
+      - --record-size=${BENCH_RECORD_SIZE}
+      - --buffer-size=${BENCH_BUFFER_SIZE}
+      - --seed=${BENCH_SEED}
+      - --out=${BENCH_BUFFERED_OUTPUT}
+      - --manifest=${BENCH_BUFFERED_MANIFEST}
+      - --durability=${DURABILITY}
+      - --overwrite=${OVERWRITE_POLICY}

@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+
+	multiwrite "multiwrite/src"
 )
 
 func main() {
@@ -32,7 +34,7 @@ func runCLI(args []string) error {
 		}
 	}
 
-	cfg := DefaultRunConfig()
+	cfg := multiwrite.DefaultRunConfig()
 	var cpuProfilePath string
 	var memProfilePath string
 	var tracePath string
@@ -66,7 +68,7 @@ func runCLI(args []string) error {
 	}
 	defer stopProfiles()
 
-	result, runErr := Run(cfg)
+	result, runErr := multiwrite.Run(cfg)
 	if memProfilePath != "" {
 		if err := writeHeapProfile(memProfilePath); err != nil && runErr == nil {
 			runErr = err
@@ -95,12 +97,12 @@ func startProfiles(cpuProfilePath, tracePath string) (func(), error) {
 	if cpuProfilePath != "" {
 		f, err := os.Create(cpuProfilePath)
 		if err != nil {
-			return nil, fmt.Errorf("%w: create CPU profile: %v", ErrFilesystem, err)
+			return nil, fmt.Errorf("%w: create CPU profile: %v", multiwrite.ErrFilesystem, err)
 		}
 		files = append(files, f)
 		if err := pprof.StartCPUProfile(f); err != nil {
 			_ = f.Close()
-			return nil, fmt.Errorf("%w: start CPU profile: %v", ErrApplicationBug, err)
+			return nil, fmt.Errorf("%w: start CPU profile: %v", multiwrite.ErrApplicationBug, err)
 		}
 		stopCPU = true
 	}
@@ -108,12 +110,12 @@ func startProfiles(cpuProfilePath, tracePath string) (func(), error) {
 	if tracePath != "" {
 		f, err := os.Create(tracePath)
 		if err != nil {
-			return nil, fmt.Errorf("%w: create trace: %v", ErrFilesystem, err)
+			return nil, fmt.Errorf("%w: create trace: %v", multiwrite.ErrFilesystem, err)
 		}
 		files = append(files, f)
 		if err := trace.Start(f); err != nil {
 			_ = f.Close()
-			return nil, fmt.Errorf("%w: start trace: %v", ErrApplicationBug, err)
+			return nil, fmt.Errorf("%w: start trace: %v", multiwrite.ErrApplicationBug, err)
 		}
 		stopTrace = true
 	}
@@ -134,12 +136,12 @@ func startProfiles(cpuProfilePath, tracePath string) (func(), error) {
 func writeHeapProfile(path string) error {
 	f, err := os.Create(path)
 	if err != nil {
-		return fmt.Errorf("%w: create heap profile: %v", ErrFilesystem, err)
+		return fmt.Errorf("%w: create heap profile: %v", multiwrite.ErrFilesystem, err)
 	}
 	defer f.Close()
 	runtime.GC()
 	if err := pprof.WriteHeapProfile(f); err != nil {
-		return fmt.Errorf("%w: write heap profile: %v", ErrApplicationBug, err)
+		return fmt.Errorf("%w: write heap profile: %v", multiwrite.ErrApplicationBug, err)
 	}
 	return nil
 }

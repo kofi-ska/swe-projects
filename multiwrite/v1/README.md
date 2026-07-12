@@ -19,11 +19,13 @@ It replaces the v0 loop-only measurement with a manifest-driven run model that r
 ## v1 Contract
 
 - Validate config before file creation or generation.
-- Bound records, bytes, duration, queue depth, batch size, and buffer size.
+- Bound records, bytes, duration, record size, and buffer size.
+- Reject queue and batch controls until those paths are implemented.
 - Generate deterministic workloads from seed and profile.
 - Include flush, close, and commit in lifecycle timing.
 - Write through a temp artifact and commit deliberately.
 - Emit a versioned JSON manifest for every terminal run.
+- Record terminal reason separately from status.
 - Preserve enough environment metadata to reproduce and compare local, Docker Compose, and k3s runs.
 - Expose profiling artifacts through CLI flags.
 
@@ -31,6 +33,13 @@ It replaces the v0 loop-only measurement with a manifest-driven run model that r
 
 - [Architecture](./docs/Architecture.md): run contract, entities, config, lifecycle, data flow, formal model, queueing model, manifest schema, interfaces, and deployment requirements.
 - [Benchmarks](./docs/Benchmarks.md): benchmark protocol and result records for local, Docker Compose, and k3s.
+
+## Layout
+
+- `src/`: importable write engine package.
+- `cmd/multiwrite/`: CLI entrypoint.
+- `tests/`: external tests and benchmarks that import `src/`.
+- `benchmarks/`: benchmark configs, results, and generated artifacts.
 
 ## CLI Shape
 
@@ -52,7 +61,7 @@ multiwrite run \
 From `multiwrite/v1`:
 
 ```bash
-go run . run \
+go run ./cmd/multiwrite run \
   --writer=buffered \
   --profile=fixed \
   --records=100000 \
@@ -73,6 +82,8 @@ Run package benchmarks:
 go test ./... -bench=. -benchmem
 ```
 
+Writer microbenchmarks isolate direct vs buffered writing with prebuilt payloads. Engine lifecycle benchmarks call the full `Run(config)` path.
+
 Run the bounded Compose smoke case:
 
 ```bash
@@ -84,3 +95,5 @@ Run the Compose direct and buffered comparison services:
 ```bash
 docker compose --profile benchmark up --build --abort-on-container-exit
 ```
+
+Compose parameters are defined in `.env`.

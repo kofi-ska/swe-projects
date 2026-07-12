@@ -1,4 +1,4 @@
-package main
+package multiwrite
 
 import (
 	"encoding/json"
@@ -10,7 +10,19 @@ import (
 	"time"
 )
 
-const manifestSchemaVersion = "multiwrite.v1.run.1"
+const ManifestSchemaVersion = "multiwrite.v1.run.1"
+
+const (
+	ReasonRecordsExhausted     = "records_exhausted"
+	ReasonByteLimitReached     = "byte_limit_reached"
+	ReasonDurationLimitReached = "duration_limit_reached"
+	ReasonValidationFailed     = "validation_failed"
+	ReasonWriterCreateFailed   = "writer_create_failed"
+	ReasonWriteFailed          = "write_failed"
+	ReasonFlushCloseFailed     = "flush_close_failed"
+	ReasonCommitFailed         = "commit_failed"
+	ReasonManifestWriteFailed  = "manifest_write_failed"
+)
 
 type RunResult struct {
 	SchemaVersion           string         `json:"schema_version"`
@@ -19,6 +31,7 @@ type RunResult struct {
 	StartedAt               time.Time      `json:"started_at"`
 	EndedAt                 time.Time      `json:"ended_at"`
 	Status                  string         `json:"status"`
+	TerminalReason          string         `json:"terminal_reason"`
 	ErrorDomain             string         `json:"error_domain,omitempty"`
 	Error                   string         `json:"error,omitempty"`
 	Config                  RunConfig      `json:"config"`
@@ -30,12 +43,19 @@ type RunResult struct {
 	DurationWriteLoopNanos  int64          `json:"duration_write_loop_nanos"`
 	DurationFlushCloseNanos int64          `json:"duration_flush_close_nanos"`
 	DurationCommitNanos     int64          `json:"duration_commit_nanos"`
+	DurationManifestNanos   int64          `json:"-"`
+	DurationProcessNanos    int64          `json:"-"`
+	ManifestSelfTiming      string         `json:"manifest_self_timing"`
 	RecordsPerSecond        float64        `json:"records_per_second"`
 	MiBPerSecond            float64        `json:"mib_per_second"`
 	ArtifactState           string         `json:"artifact_state"`
 	OutputPath              string         `json:"output_path"`
 	TempPath                string         `json:"temp_path,omitempty"`
 	ManifestPath            string         `json:"manifest_path"`
+	SyscallTracePath        string         `json:"syscall_trace_path,omitempty"`
+	WriteSyscallCount       int64          `json:"write_syscall_count,omitempty"`
+	WriteSyscallBytesTotal  int64          `json:"write_syscall_bytes_total,omitempty"`
+	WriteSyscallBytesAvg    float64        `json:"write_syscall_bytes_avg,omitempty"`
 	Environment             RunEnvironment `json:"environment"`
 }
 
@@ -61,27 +81,29 @@ func Run(cfg RunConfig) (RunResult, error) {
 
 	start := time.Now()
 	result := RunResult{
-		SchemaVersion:    manifestSchemaVersion,
-		RunID:            makeRunID(start),
-		BinaryVersion:    envDefault("MULTIWRITE_VERSION", "dev"),
-		StartedAt:        start.UTC(),
-		Status:           "created",
-		Config:           cfg,
-		RecordsRequested: cfg.RecordsLimit,
-		ArtifactState:    "none",
-		ManifestPath:     cfg.ManifestPath,
-		Environment:      detectEnvironment(),
+		SchemaVersion:      ManifestSchemaVersion,
+		RunID:              makeRunID(start),
+		BinaryVersion:      envDefault("MULTIWRITE_VERSION", "dev"),
+		StartedAt:          start.UTC(),
+		Status:             "created",
+		Config:             cfg,
+		RecordsRequested:   cfg.RecordsLimit,
+		ArtifactState:      "none",
+		ManifestPath:       cfg.ManifestPath,
+		ManifestSelfTiming: "excluded_self_referential_write",
+		SyscallTracePath:   os.Getenv("MULTIWRITE_SYSCALL_TRACE_PATH"),
+		Environment:        detectEnvironment(),
 	}
 
 	if err := cfg.Validate(); err != nil {
-		finishResult(&result, "rejected", err, start)
+		finishResult(&result, "rejected", ReasonValidationFailed, err, start)
 		return result, err
 	}
 
 	finalPath, err := resolveOutputPath(cfg)
 	if err != nil {
-		finishResult(&result, "rejected", err, start)
-		_ = writeManifest(result)
+		finishResult(&result, "rejected", ReasonValidationFailed, err, start)
+		_ = writeManifestTimed(&result)
 		return result, err
 	}
 	tempPath := finalPath + ".tmp"
@@ -90,20 +112,20 @@ func Run(cfg RunConfig) (RunResult, error) {
 
 	if _, err := os.Stat(tempPath); err == nil {
 		runErr := fmt.Errorf("%w: temp artifact already exists: %s", ErrValidation, tempPath)
-		finishResult(&result, "rejected", runErr, start)
-		_ = writeManifest(result)
+		finishResult(&result, "rejected", ReasonValidationFailed, runErr, start)
+		_ = writeManifestTimed(&result)
 		return result, runErr
 	} else if !os.IsNotExist(err) {
 		runErr := fmt.Errorf("%w: inspect temp artifact: %v", ErrFilesystem, err)
-		finishResult(&result, "rejected", runErr, start)
-		_ = writeManifest(result)
+		finishResult(&result, "rejected", ReasonValidationFailed, runErr, start)
+		_ = writeManifestTimed(&result)
 		return result, runErr
 	}
 
 	writer, err := newMeasuredWriter(tempPath, cfg)
 	if err != nil {
-		finishResult(&result, "failed", err, start)
-		_ = writeManifest(result)
+		finishResult(&result, "failed", ReasonWriterCreateFailed, err, start)
+		_ = writeManifestTimed(&result)
 		return result, err
 	}
 	result.ArtifactState = "temp"
@@ -111,22 +133,26 @@ func Run(cfg RunConfig) (RunResult, error) {
 	generator := NewRecordGenerator(cfg.Profile, cfg.Seed, cfg.RecordSize)
 	writeStart := time.Now()
 	result.Status = "running"
+	terminalReason := ReasonRecordsExhausted
 
 	for result.RecordsGenerated < cfg.RecordsLimit {
 		if time.Since(start) > cfg.MaxDuration {
 			err = fmt.Errorf("%w: run exceeded %s", ErrTimeout, cfg.MaxDuration)
+			terminalReason = ReasonDurationLimitReached
 			break
 		}
 
 		record := generator.Next()
 		nextBytes := result.BytesWritten + int64(len(record))
 		if nextBytes > cfg.MaxBytes {
+			terminalReason = ReasonByteLimitReached
 			break
 		}
 
 		result.RecordsGenerated++
 		if writeErr := writer.WriteRecord(record); writeErr != nil {
 			err = writeErr
+			terminalReason = ReasonWriteFailed
 			break
 		}
 		result.RecordsWritten++
@@ -141,11 +167,11 @@ func Run(cfg RunConfig) (RunResult, error) {
 		}
 		if result.BytesWritten > 0 {
 			result.ArtifactState = "partial"
-			finishResult(&result, "partial", err, start)
+			finishResult(&result, "partial", terminalReason, err, start)
 		} else {
-			finishResult(&result, "failed", err, start)
+			finishResult(&result, "failed", terminalReason, err, start)
 		}
-		_ = writeManifest(result)
+		_ = writeManifestTimed(&result)
 		return result, err
 	}
 
@@ -159,8 +185,8 @@ func Run(cfg RunConfig) (RunResult, error) {
 	result.DurationFlushCloseNanos = time.Since(flushStart).Nanoseconds()
 	if err != nil {
 		result.ArtifactState = "partial"
-		finishResult(&result, "partial", err, start)
-		_ = writeManifest(result)
+		finishResult(&result, "partial", ReasonFlushCloseFailed, err, start)
+		_ = writeManifestTimed(&result)
 		return result, err
 	}
 
@@ -169,24 +195,27 @@ func Run(cfg RunConfig) (RunResult, error) {
 		runErr := fmt.Errorf("%w: commit artifact: %v", ErrFilesystem, err)
 		result.ArtifactState = "partial"
 		result.DurationCommitNanos = time.Since(commitStart).Nanoseconds()
-		finishResult(&result, "partial", runErr, start)
-		_ = writeManifest(result)
+		finishResult(&result, "partial", ReasonCommitFailed, runErr, start)
+		_ = writeManifestTimed(&result)
 		return result, runErr
 	}
 	result.DurationCommitNanos = time.Since(commitStart).Nanoseconds()
 	result.ArtifactState = "final"
 
-	finishResult(&result, "completed", nil, start)
-	if err = writeManifest(result); err != nil {
+	finishResult(&result, "completed", terminalReason, nil, start)
+	if err = writeManifestTimed(&result); err != nil {
+		finishResult(&result, "failed", ReasonManifestWriteFailed, err, start)
 		return result, err
 	}
 	return result, nil
 }
 
-func finishResult(result *RunResult, status string, err error, start time.Time) {
+func finishResult(result *RunResult, status, terminalReason string, err error, start time.Time) {
 	result.Status = status
+	result.TerminalReason = terminalReason
 	result.EndedAt = time.Now().UTC()
 	result.DurationTotalNanos = time.Since(start).Nanoseconds()
+	result.DurationProcessNanos = result.DurationTotalNanos + result.DurationManifestNanos
 	if err != nil {
 		result.ErrorDomain = errorDomain(err)
 		result.Error = err.Error()
@@ -229,6 +258,14 @@ func writeManifest(result RunResult) error {
 		return fmt.Errorf("%w: write manifest: %v", ErrFilesystem, err)
 	}
 	return nil
+}
+
+func writeManifestTimed(result *RunResult) error {
+	manifestStart := time.Now()
+	err := writeManifest(*result)
+	result.DurationManifestNanos = time.Since(manifestStart).Nanoseconds()
+	result.DurationProcessNanos = result.DurationTotalNanos + result.DurationManifestNanos
+	return err
 }
 
 func needsSync(durability string) bool {

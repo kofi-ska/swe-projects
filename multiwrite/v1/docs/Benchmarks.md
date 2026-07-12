@@ -27,7 +27,14 @@ Benchmark run material lives under `benchmarks/`.
 - `benchmarks/artifacts/traces/`: Go execution traces.
 - `benchmarks/artifacts/syscalls/`: syscall traces.
 
-Go microbenchmarks live in package-level `*_test.go` files so `go test -bench=. -benchmem` can run them directly.
+Go microbenchmarks live under `tests/` and import the engine from `src/`, so `go test -bench=. -benchmem ./...` runs them directly.
+
+Benchmark classes:
+
+- writer microbenchmarks use prebuilt payloads and exclude generator, manifest, CLI, and temp-file commit logic.
+- generator benchmarks measure payload construction only.
+- engine lifecycle benchmarks call `Run(config)` and include validation, generation, temp artifact, flush, close, commit, and manifest handling.
+- Compose runs verify bounded reproducibility and artifact production.
 
 ## Hypotheses
 
@@ -362,9 +369,9 @@ Record for every run:
 - byte count
 - record size distribution
 - buffer size
-- batch size
 - durability mode
 - artifact state
+- terminal reason
 - total duration
 - flush/close duration
 - records/s
@@ -393,11 +400,14 @@ Benchmarks:
 - `BenchmarkBufferedWriter`
 - `BenchmarkBufferedWriterSizes`
 - `BenchmarkRecordSizes`
+- `BenchmarkGeneratorCost`
+- `BenchmarkEngineLifecycleNoSync`
 
 Rules:
 
-- Same generator.
-- Same payload bytes.
+- Same prebuilt payload bytes for writer microbenchmarks.
+- Same generator seed and profile for engine lifecycle benchmarks.
+- Actual payload bytes are used for benchmark byte accounting.
 - Same output semantics.
 - Same durability mode.
 
@@ -512,6 +522,15 @@ Docker Compose direct/buffered comparison:
 docker compose --profile benchmark up --build --abort-on-container-exit
 ```
 
+Compose parameters are loaded from `.env`:
+
+- image
+- CPU and memory envelope
+- mounted artifact directories
+- smoke workload
+- direct/buffered comparison workload
+- durability and overwrite policy
+
 ## Comparison Rules
 
 Must match unless named as the independent variable:
@@ -540,6 +559,7 @@ Must match unless named as the independent variable:
 - benchmark output path
 - profile paths
 - syscall trace path
+- terminal reason
 - result
 - interpretation
 - reproduction command

@@ -27,7 +27,7 @@ go test ./... -bench=. -benchmem
 ```
 
 ```bash
-go run . run \
+go run ./cmd/multiwrite run \
   --writer=direct \
   --profile=fixed \
   --records=100000 \
@@ -42,7 +42,7 @@ go run . run \
 ```
 
 ```bash
-go run . run \
+go run ./cmd/multiwrite run \
   --writer=buffered \
   --profile=fixed \
   --records=100000 \
@@ -60,3 +60,5 @@ go run . run \
 ```bash
 docker compose run --rm multiwrite-smoke
 ```
+
+Compose workload, resource, and artifact parameters are defined in `../.env` relative to this directory.
