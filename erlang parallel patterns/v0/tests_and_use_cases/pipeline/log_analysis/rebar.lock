@@ -1,0 +1,5 @@
+[{<<"pipeline_parallel_pattern">>,
+  {git_subdir,"https://github.com/settor21/Parallel_Patterns_Erlang.git",
+              {ref,"cecf45de439f2d65868dd2468beda5e274ca72af"},
+              "lib/pipeline_parallel_pattern"},
+  0}].

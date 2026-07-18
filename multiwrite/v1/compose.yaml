@@ -1,0 +1,133 @@
+# Compose boundary
+services:
+  multiwrite-smoke:
+    # Image
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${MULTIWRITE_IMAGE}
+
+    # Runtime envelope
+    cpus: ${MULTIWRITE_CPUS}
+    mem_limit: ${MULTIWRITE_MEMORY_LIMIT}
+    environment:
+      GOMEMLIMIT: ${MULTIWRITE_GOMEMLIMIT}
+      MULTIWRITE_ENV: ${MULTIWRITE_ENV}
+      MULTIWRITE_CPU_LIMIT: ${MULTIWRITE_CPUS}
+      MULTIWRITE_MEMORY_LIMIT: ${MULTIWRITE_MEMORY_LIMIT}
+      MULTIWRITE_VOLUME_KIND: ${MULTIWRITE_VOLUME_KIND}
+      MULTIWRITE_IMAGE: ${MULTIWRITE_IMAGE}
+
+    # Artifact mounts
+    volumes:
+      - ${OUTPUT_DIR}:/app/benchmarks/artifacts/outputs
+      - ${MANIFEST_DIR}:/app/benchmarks/artifacts/manifests
+      - ${PROFILE_DIR}:/app/benchmarks/artifacts/profiles
+      - ${TRACE_DIR}:/app/benchmarks/artifacts/traces
+      - ${SYSCALL_DIR}:/app/benchmarks/artifacts/syscalls
+
+    # Workload
+    command:
+      - run
+      - --writer=${SMOKE_WRITER}
+      - --profile=${SMOKE_PROFILE}
+      - --records=${SMOKE_RECORDS}
+      - --max-bytes=${SMOKE_MAX_BYTES}
+      - --max-duration=${SMOKE_MAX_DURATION}
+      - --record-size=${SMOKE_RECORD_SIZE}
+      - --buffer-size=${SMOKE_BUFFER_SIZE}
+      - --seed=${SMOKE_SEED}
+      - --out=${SMOKE_OUTPUT}
+      - --manifest=${SMOKE_MANIFEST}
+      - --cpuprofile=${SMOKE_CPU_PROFILE}
+      - --memprofile=${SMOKE_MEM_PROFILE}
+      - --trace=${SMOKE_TRACE}
+      - --durability=${DURABILITY}
+      - --overwrite=${OVERWRITE_POLICY}
+
+  multiwrite-direct:
+    # Image
+    image: ${MULTIWRITE_IMAGE}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles:
+      - benchmark
+
+    # Runtime envelope
+    cpus: ${MULTIWRITE_CPUS}
+    mem_limit: ${MULTIWRITE_MEMORY_LIMIT}
+    environment:
+      GOMEMLIMIT: ${MULTIWRITE_GOMEMLIMIT}
+      MULTIWRITE_ENV: ${MULTIWRITE_ENV}
+      MULTIWRITE_CPU_LIMIT: ${MULTIWRITE_CPUS}
+      MULTIWRITE_MEMORY_LIMIT: ${MULTIWRITE_MEMORY_LIMIT}
+      MULTIWRITE_VOLUME_KIND: ${MULTIWRITE_VOLUME_KIND}
+      MULTIWRITE_IMAGE: ${MULTIWRITE_IMAGE}
+
+    # Artifact mounts
+    volumes:
+      - ${OUTPUT_DIR}:/app/benchmarks/artifacts/outputs
+      - ${MANIFEST_DIR}:/app/benchmarks/artifacts/manifests
+      - ${PROFILE_DIR}:/app/benchmarks/artifacts/profiles
+      - ${TRACE_DIR}:/app/benchmarks/artifacts/traces
+      - ${SYSCALL_DIR}:/app/benchmarks/artifacts/syscalls
+
+    # Workload
+    command:
+      - run
+      - --writer=direct
+      - --profile=${BENCH_PROFILE}
+      - --records=${BENCH_RECORDS}
+      - --max-bytes=${BENCH_MAX_BYTES}
+      - --max-duration=${BENCH_MAX_DURATION}
+      - --record-size=${BENCH_RECORD_SIZE}
+      - --seed=${BENCH_SEED}
+      - --out=${BENCH_DIRECT_OUTPUT}
+      - --manifest=${BENCH_DIRECT_MANIFEST}
+      - --durability=${DURABILITY}
+      - --overwrite=${OVERWRITE_POLICY}
+
+  multiwrite-buffered:
+    # Image
+    image: ${MULTIWRITE_IMAGE}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles:
+      - benchmark
+
+    # Runtime envelope
+    cpus: ${MULTIWRITE_CPUS}
+    mem_limit: ${MULTIWRITE_MEMORY_LIMIT}
+    environment:
+      GOMEMLIMIT: ${MULTIWRITE_GOMEMLIMIT}
+      MULTIWRITE_ENV: ${MULTIWRITE_ENV}
+      MULTIWRITE_CPU_LIMIT: ${MULTIWRITE_CPUS}
+      MULTIWRITE_MEMORY_LIMIT: ${MULTIWRITE_MEMORY_LIMIT}
+      MULTIWRITE_VOLUME_KIND: ${MULTIWRITE_VOLUME_KIND}
+      MULTIWRITE_IMAGE: ${MULTIWRITE_IMAGE}
+
+    # Artifact mounts
+    volumes:
+      - ${OUTPUT_DIR}:/app/benchmarks/artifacts/outputs
+      - ${MANIFEST_DIR}:/app/benchmarks/artifacts/manifests
+      - ${PROFILE_DIR}:/app/benchmarks/artifacts/profiles
+      - ${TRACE_DIR}:/app/benchmarks/artifacts/traces
+      - ${SYSCALL_DIR}:/app/benchmarks/artifacts/syscalls
+
+    # Workload
+    command:
+      - run
+      - --writer=buffered
+      - --profile=${BENCH_PROFILE}
+      - --records=${BENCH_RECORDS}
+      - --max-bytes=${BENCH_MAX_BYTES}
+      - --max-duration=${BENCH_MAX_DURATION}
+      - --record-size=${BENCH_RECORD_SIZE}
+      - --buffer-size=${BENCH_BUFFER_SIZE}
+      - --seed=${BENCH_SEED}
+      - --out=${BENCH_BUFFERED_OUTPUT}
+      - --manifest=${BENCH_BUFFERED_MANIFEST}
+      - --durability=${DURABILITY}
+      - --overwrite=${OVERWRITE_POLICY}

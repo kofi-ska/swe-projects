@@ -1,0 +1,23 @@
+# Go build/test outputs
+*.test
+*.prof
+*.pprof
+*.trace
+coverage.out
+
+# Local benchmark binary
+benchmarks/artifacts/multiwrite
+
+# Generated benchmark artifacts
+benchmarks/artifacts/outputs/*
+benchmarks/artifacts/manifests/*
+benchmarks/artifacts/profiles/*
+benchmarks/artifacts/traces/*
+benchmarks/artifacts/syscalls/*
+
+# Keep artifact directory placeholders
+!benchmarks/artifacts/outputs/.gitkeep
+!benchmarks/artifacts/manifests/.gitkeep
+!benchmarks/artifacts/profiles/.gitkeep
+!benchmarks/artifacts/traces/.gitkeep
+!benchmarks/artifacts/syscalls/.gitkeep

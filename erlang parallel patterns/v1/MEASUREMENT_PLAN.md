@@ -14,6 +14,8 @@ Scope:
 - observability overhead
 - orchestration overhead
 - fairness under contention
+- Docker Compose validation before k3s validation
+- measurement artifact capture in MinIO-compatible object storage
 
 ## 1. Claims to Validate
 
@@ -51,12 +53,14 @@ Scope:
 - Admission, reject, defer, retry, timeout, cancel, completion, and failure rates are visible.
 - Region, coordinator, worker, stage, join, and node health are visible.
 - Trace correlation survives local and remote execution.
+- Structured lifecycle logs are queryable in Loki without using high-cardinality IDs as labels.
 
 ### 1.6 Economics
 
 - Orchestration overhead stays bounded relative to task value.
 - Retry amplification stays near `1.x` under normal load.
 - Remote placement is used only when policy and capacity make it worthwhile.
+- Measurement artifacts are written outside the runtime critical path and are not used as job durability.
 
 ## 2. Test Environment
 
@@ -67,6 +71,10 @@ Scope:
 - Same build artifact for all runs.
 - Same configuration snapshot for all repeats.
 - Clock source synchronized across nodes.
+- Docker Compose run executed before k3s validation.
+- k3s run uses the same runtime image and equivalent configuration.
+- No Cassandra-backed durability is present in v1 runs.
+- No Grafana dependency is required for validation.
 
 ### 2.2 Required telemetry
 
@@ -80,6 +88,8 @@ Scope:
 - inflight count
 - terminal state
 - rejection reason
+- log event name
+- artifact URI for persisted reports where relevant
 
 ### 2.3 Measurement rules
 
@@ -90,6 +100,8 @@ Scope:
 - Separate local execution metrics from remote execution metrics.
 - Separate queue delay from execution time.
 - Record the exact config used for each run.
+- Store measurement reports, benchmark outputs, config snapshots, and fault-injection summaries in MinIO-compatible object storage.
+- Do not read runtime settlement state from MinIO during validation.
 
 Recommended minimum:
 
@@ -151,6 +163,15 @@ Recommended minimum:
 - `messages_per_task`
 - `spans_per_task`
 
+### 3.6 Artifacts
+
+- `artifact_write_success_rate`
+- `artifact_write_latency`
+- `artifact_bytes_written`
+- `report_uri`
+- `config_snapshot_uri`
+- `fault_summary_uri`
+
 ## 4. Workload Model
 
 ### 4.1 Task classes
@@ -181,8 +202,10 @@ Recommended minimum:
 
 - 1 node, 1 worker group
 - 1 node, many workers
+- Docker Compose: 1 coordinator, many worker containers
 - many nodes, bounded worker groups
 - many nodes, skewed load
+- k3s: 1 coordinator deployment, scalable worker deployment
 
 ## 5. Experiment Matrix
 
@@ -324,13 +347,17 @@ Pass criteria:
 
 Purpose:
 
-- prove that metrics, logs, and traces remain usable under load
+- prove that metrics, logs, traces, and measurement artifacts remain usable under load
 
 Procedure:
 
 - run at target load and overload
 - enable normal telemetry sampling
 - inspect telemetry delay and drop behavior
+- query lifecycle logs in Loki
+- inspect traces in Jaeger
+- inspect metrics in Prometheus
+- upload run reports and config snapshots to MinIO
 
 Pass criteria:
 
@@ -338,6 +365,8 @@ Pass criteria:
 - trace correlation remains intact for sampled traces
 - logs remain structured and queryable
 - telemetry overhead stays bounded
+- MinIO artifact writes succeed without affecting admission, dispatch, or terminal settlement
+- high-cardinality IDs appear in log bodies and reports, not as required Loki labels
 
 ### 5.9 Economics
 
@@ -357,6 +386,52 @@ Pass criteria:
 - retry amplification remains near `1.x` in normal load
 - remote placement is used only when it improves utility under policy
 
+### 5.10 Docker Compose deployment
+
+Purpose:
+
+- prove that the first containerized distributed target supports runtime semantics and observability
+
+Procedure:
+
+- run one coordinator and multiple worker containers
+- run OTEL Collector, Jaeger, Prometheus, Loki, log shipping, and MinIO
+- submit work for each supported pattern
+- kill and restart worker containers during active load
+- collect reports, logs, traces, and metrics for each run
+
+Pass criteria:
+
+- Erlang nodes connect predictably through configured node names, cookies, and ports
+- worker container failure is detected and reclassified
+- no duplicate terminal settlement occurs after container restart
+- Jaeger receives sampled traces
+- Prometheus scrapes runtime metrics
+- Loki receives structured lifecycle logs
+- MinIO stores run artifacts
+
+### 5.11 k3s deployment
+
+Purpose:
+
+- prove that the runtime contract survives Kubernetes-style scheduling and rollout behavior
+
+Procedure:
+
+- deploy coordinator and worker workloads to k3s using the same image as Compose
+- configure Erlang cookie, runtime limits, telemetry endpoints, and MinIO credentials through Kubernetes resources
+- run readiness, liveness, scaling, and rolling restart scenarios
+- trigger graceful drain through pod termination
+
+Pass criteria:
+
+- pod DNS and Services support Erlang distribution
+- worker scaling does not bypass admission or budget checks
+- readiness becomes false during drain or overload
+- `SIGTERM` starts graceful drain where possible
+- rolling restarts do not create duplicate terminal settlement
+- observability and artifact capture remain available after pod restarts
+
 ## 6. Fault Injection Matrix
 
 ### 6.1 Process faults
@@ -371,6 +446,9 @@ Pass criteria:
 - terminate remote node
 - restart remote node
 - delay node rejoin
+- terminate worker container
+- terminate worker pod
+- roll coordinator pod during drain
 
 ### 6.3 Message faults
 
@@ -388,6 +466,15 @@ Pass criteria:
 - retry storm
 - mixed-size payload flood
 - overload above capacity
+
+### 6.5 Observability and artifact faults
+
+- OTEL Collector unavailable
+- Jaeger unavailable
+- Prometheus scrape delayed
+- Loki unavailable
+- MinIO unavailable
+- artifact upload delayed
 
 ## 7. Acceptance Criteria
 
@@ -407,6 +494,9 @@ The implementation passes only if all of the following hold:
 - observability remains usable under stress
 - overhead remains bounded relative to useful work
 - remote placement does not bypass admission control
+- MinIO artifacts are written for completed measurement runs
+- loss or delay of observability backends does not alter terminal settlement semantics
+- no Cassandra-backed durability is required
 
 ## 8. Reporting Format
 
@@ -420,6 +510,9 @@ Each run reports:
 - fault injection set
 - pattern under test
 - metrics summary
+- log query references
+- trace references
+- artifact URIs
 - pass/fail by claim
 - failures with timestamps and IDs
 - deltas from prior run
@@ -430,10 +523,12 @@ Each run reports:
 2. Validate boundedness at low and target load.
 3. Validate pattern semantics.
 4. Validate recovery under process faults.
-5. Validate recovery under node faults.
-6. Validate observability under stress.
-7. Validate economics under small, medium, and large tasks.
-8. Validate distributed runs only after single-node results are stable.
+5. Validate Docker Compose with coordinator, workers, Jaeger, Prometheus, Loki, and MinIO.
+6. Validate recovery under node and container faults.
+7. Validate observability and artifact capture under stress.
+8. Validate economics under small, medium, and large tasks.
+9. Validate k3s only after Compose results are stable.
+10. Validate broader distributed runs only after single-node and Compose results are stable.
 
 ## 10. Result
 
@@ -444,6 +539,7 @@ The architecture is validated only when the measurements show:
 - predictable degradation
 - recovery without duplicate settlement
 - measurable observability
+- queryable lifecycle logs
+- persisted measurement artifacts
 - bounded orchestration cost
 - pattern-specific behavior under load
-
