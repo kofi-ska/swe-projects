@@ -45,6 +45,40 @@ Benchmark classes:
 - Buffer-size gains plateau.
 - Sync, generator cost, GC, page cache, or storage can dominate.
 
+## Expected Findings
+
+Expected for small records:
+
+- `direct` should issue one file write per logical record.
+- `buffered` should issue fewer file writes than logical records.
+- `buffered` should show larger average syscall write size.
+- `buffered` should reduce system CPU per byte when syscall overhead dominates.
+- `buffered` should not materially reduce durable completion time when `fsync` or storage writeback dominates.
+
+Expected as record size increases:
+
+- Direct and buffered throughput should converge.
+- The writer should stop dominating once generator cost, memory bandwidth, page cache behavior, filesystem behavior, or storage behavior dominates.
+
+Expected as buffer size increases:
+
+- Throughput should improve until syscall overhead is no longer dominant.
+- Past that point, larger buffers should add memory and flush latency without proportional throughput gain.
+
+Expected from Go-level profiling:
+
+- Writer microbenchmarks should have stable allocation counts.
+- CPU profiles should separate generator cost from writer cost.
+- Heap profiles should show whether record construction or buffering drives allocation.
+- Go execution traces should show whether time is spent running, blocked in syscalls, stopped for GC, or delayed by scheduling.
+- Escape analysis should explain unexpected allocation changes in hot paths.
+
+Expected from kernel observation:
+
+- Syscall tracing should confirm whether buffered writes reduce `write()` count.
+- Syscall tracing should report total bytes written and average bytes per `write()`.
+- System CPU should fall when syscall count falls and storage is not the bottleneck.
+
 ## Optimisation Workstreams
 
 Each optimisation must be tested against `direct` and `buffered` baselines. An optimisation is accepted only when the result includes throughput, allocation, CPU, syscall, durability, and reproducibility evidence.
@@ -411,6 +445,33 @@ Rules:
 - Same output semantics.
 - Same durability mode.
 
+## Required Evidence
+
+No performance claim is accepted from wall-clock duration alone.
+
+| Layer | Tool | Question | Required artifact |
+| --- | --- | --- | --- |
+| Microbenchmark | `go test -bench -benchmem` | What is the isolated cost of the writer, generator, and engine lifecycle? | benchmark output |
+| CPU profile | `pprof` | Which functions consume CPU? | `benchmarks/artifacts/profiles/*.cpu.pprof` and summary |
+| Heap profile | `pprof` | Which paths allocate and retain memory? | `benchmarks/artifacts/profiles/*.mem.pprof` and summary |
+| Flamegraph | `go tool pprof -svg` | Is the hot path visually dominated by generation, write, runtime, or filesystem calls? | `benchmarks/artifacts/profiles/*.svg` |
+| Runtime trace | `go tool trace` | Are goroutines running, blocked in syscall, delayed by GC, or delayed by scheduling? | `benchmarks/artifacts/traces/*.trace` and summary |
+| Compiler | escape analysis | Do hot-path values escape unexpectedly? | escape report |
+| Compiler | inlining report | Are hot-path calls inlined or dispatched through interfaces? | inlining report |
+| Kernel | `strace`, `dtruss`, or `fs_usage` | How many writes reached the kernel and what size were they? | syscall trace and parsed summary |
+| Runtime diagnostics | `GODEBUG=gctrace`, `GODEBUG=schedtrace` | Is GC or scheduling material to the result? | captured diagnostic output |
+| Concurrency | race, block, mutex, goroutine profiles | Are concurrency primitives adding contention or unsafe shared state? | profile or test output when concurrency is enabled |
+
+Minimum evidence for `direct` vs `buffered`:
+
+- benchmark output with `ns/op`, `B/op`, and `allocs/op`
+- run manifest for each CLI workload
+- CPU profile summary for each writer
+- heap profile summary for each writer
+- runtime trace summary for each writer
+- syscall summary for each writer
+- interpretation tying application timing to syscall behavior
+
 ## Escape Analysis
 
 Commands:
@@ -434,10 +495,11 @@ Inspect:
 Commands:
 
 ```bash
-go test ./... -bench=. -cpuprofile ./artifacts/profiles/cpu.pprof
-go test ./... -bench=. -memprofile ./artifacts/profiles/mem.pprof
-go tool pprof ./artifacts/profiles/cpu.pprof
-go tool pprof ./artifacts/profiles/mem.pprof
+go test ./... -bench=. -cpuprofile benchmarks/artifacts/profiles/cpu.pprof
+go test ./... -bench=. -memprofile benchmarks/artifacts/profiles/mem.pprof
+go tool pprof -top benchmarks/artifacts/profiles/cpu.pprof
+go tool pprof -top benchmarks/artifacts/profiles/mem.pprof
+go tool pprof -svg benchmarks/artifacts/profiles/cpu.pprof
 ```
 
 Record:
@@ -445,6 +507,7 @@ Record:
 - CPU hot spots
 - heap profile
 - alloc profile
+- flamegraph path
 - generator cost
 - formatting cost
 - writer cost
@@ -458,7 +521,7 @@ Commands:
 GODEBUG=gctrace=1 multiwrite run <args>
 GODEBUG=schedtrace=1000 multiwrite run <args>
 go test -race ./...
-go tool trace ./artifacts/traces/run.trace
+go tool trace benchmarks/artifacts/traces/run.trace
 ```
 
 Record:
@@ -473,6 +536,23 @@ Record:
 - mutex profile
 - race detector output
 
+Trace inspection:
+
+- scheduler latency
+- syscall blocking time
+- GC assists and stop-the-world pauses
+- goroutine creation count
+- goroutine lifetime
+- heap growth over the run
+
+Expected v1 trace shape:
+
+- single writer path unless queueing is enabled
+- no unbounded goroutine growth
+- no material channel or mutex blocking in the default path
+- write or close syscall blocking visible when filesystem or storage dominates
+- GC visible only if generator or batching allocates enough to matter
+
 ## Syscall Observation
 
 Tools:
@@ -485,9 +565,30 @@ Record:
 - `write()` syscall count
 - average bytes per `write()`
 - syscall duration
+- total bytes accepted by write syscalls
 - system CPU
 - context switches
 - I/O wait
+
+Expected syscall shape:
+
+- `direct` should approach one `write()` per logical record.
+- `buffered` should approach one `write()` per full buffer plus one final partial flush.
+- With 4 KiB records and a 16 KiB buffer, buffered writes should usually coalesce about four records per full buffer write.
+- If syscall count falls but throughput does not improve, the bottleneck is not syscall count.
+- If syscall count falls and system CPU falls, buffering is reducing kernel-transition cost.
+
+## Profiling Status
+
+Current status must be stated with each result set:
+
+- whether CPU profiles were collected and interpreted
+- whether heap profiles were collected and interpreted
+- whether flamegraphs were generated
+- whether Go execution traces were inspected for scheduler, syscall, and GC behavior
+- whether syscall traces were collected and summarized
+- whether escape analysis was reviewed
+- whether race, block, mutex, or goroutine diagnostics were relevant to the workload
 
 ## Environment Comparison
 
