@@ -1,4 +1,5 @@
 # Go build/test outputs
+.gocache/
 *.test
 *.prof
 *.pprof

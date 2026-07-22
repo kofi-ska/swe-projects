@@ -21,6 +21,17 @@ Important caveat:
 - They do not prove durable disk throughput because no file sync or parent directory sync is used.
 - Throughput degraded across repeated runs, so writeback, cache state, filesystem state, thermal behavior, or background I/O likely affected later samples.
 
+Profiling coverage:
+
+- CPU profiles were not collected.
+- Heap profiles were not collected.
+- Flamegraphs were not generated.
+- Go execution traces were not inspected for scheduler, syscall, or GC behavior.
+- Syscall traces were not collected.
+- Escape analysis was not reviewed for this result.
+
+This result is an initial throughput sample, not a complete performance investigation.
+
 ## Samples
 
 | sample | writer | manifest | real_s | user_s | sys_s | duration_s | MiB/s | records/s | terminal_reason |
@@ -52,6 +63,9 @@ The system CPU time was lower for buffered in every sample. That is consistent w
 Next evidence needed:
 
 - Linux or Compose run with `strace` write syscall counts.
+- CPU and heap profiles for direct and buffered runs.
+- CPU flamegraphs for direct and buffered runs.
+- Go execution traces for direct and buffered runs.
 - `synced` durability run to separate page-cache acceptance from storage durability.
 - Larger buffer-size sweep at 1 GiB.
 - Smaller record-size run to amplify syscall overhead.

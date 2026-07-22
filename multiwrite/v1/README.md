@@ -33,6 +33,7 @@ It replaces the v0 loop-only measurement with a manifest-driven run model that r
 
 - [Architecture](./docs/Architecture.md): run contract, entities, config, lifecycle, data flow, formal model, queueing model, manifest schema, interfaces, and deployment requirements.
 - [Benchmarks](./docs/Benchmarks.md): benchmark protocol and result records for local, Docker Compose, and k3s.
+- [Benchmark analysis](./benchmarks/analysis.md): current measured profiling results, pprof findings, trace findings, benchmark results, and remaining evidence gaps.
 
 ## Layout
 
