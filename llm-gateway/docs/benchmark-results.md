@@ -2,20 +2,16 @@
 
 ## 1. Purpose
 
-This document defines how the LLM gateway is benchmarked, which variables must be controlled, how results are interpreted, and which thresholds constitute a pass or regression.
-
-It deliberately separates:
+Scope:
 
 1. **Analytical expectations** derived from configuration.
 2. **Go microbenchmarks** measured in-process.
 3. **Service load tests** measured through HTTP.
 4. **Stability and overload tests** measured through metrics and profiles.
 
-Only the microbenchmark results in section 8 have been measured and recorded. The service-level result tables are templates until the corresponding controlled runs are performed. Functional deployment to k3s has been verified, but that is not evidence of load-test performance.
+Measured results and unexecuted targets are reported separately.
 
 ## 2. Performance questions
-
-The test programme must answer the following questions independently.
 
 | ID | Question | Primary evidence |
 | --- | --- | --- |
@@ -52,7 +48,7 @@ ideal request throughput = W × B / batch service time
 ideal token throughput = W × B × T / batch service time
 ```
 
-These are upper bounds. They exclude queueing, batch formation, HTTP parsing, JSON encoding, socket writes, tracing, metrics, scheduling, and garbage collection.
+The bounds exclude queueing, batch formation, HTTP, telemetry, scheduling, and garbage collection.
 
 ### 3.2 Calculated upper bounds
 
@@ -71,11 +67,9 @@ D_base + D_token + [0, D_batch]
 = 60–80 ms
 ```
 
-At 50 tokens, the 100 RPS target is approximately 86% of the ideal 116.36 RPS envelope. It is intentionally close enough to saturation to expose scheduler, serialization, telemetry, and queueing overhead. It should not be treated as guaranteed capacity until measured.
+At 50 tokens, 100 RPS is 86% of the calculated 116.36 RPS upper bound. It is not measured capacity.
 
 ### 3.3 Concurrency and memory bounds
-
-The application does not launch one processing goroutine for every offered request.
 
 | Resource | Bound with defaults |
 | --- | ---: |
@@ -86,9 +80,7 @@ The application does not launch one processing goroutine for every offered reque
 | Worker request fan-out goroutines | `W × B` = 64 |
 | Approximate admitted pipeline requests | `Q + B + 2 × W × B` = 1,136 |
 
-The HTTP server may briefly create handlers for additional offered requests, but requests beyond pipeline capacity are rejected immediately with `503` and do not create processing goroutines.
-
-Each admitted request has a one-element event channel. This bounds buffered token events while preserving backpressure. A blocked client is limited by `STREAM_WRITE_TIMEOUT`, and each batch request has its own bounded worker goroutine so one blocked stream does not prevent sibling requests from progressing.
+Requests beyond pipeline capacity return `503` without creating processing goroutines. Each admitted request has a one-element event channel. `STREAM_WRITE_TIMEOUT` bounds a blocked write. Per-request batch goroutines isolate sibling streams.
 
 ## 4. SLIs and pass criteria
 
@@ -118,7 +110,7 @@ Use the final 80% of a sustained run after warm-up.
 | Active requests | Returns to zero after load plus request timeout |
 | Cancellation | ≥99% of cancelled requests release active work within 1 second |
 
-Growth thresholds are engineering tripwires, not universal production limits. Any breach requires a heap or goroutine profile and a repeated run before classification as a leak.
+Any breach requires a repeated run and a heap or goroutine profile.
 
 ### 4.3 Microbenchmark regression criteria
 
@@ -335,51 +327,57 @@ Never expose port 6060 through a public Kubernetes Service.
 | Host | Apple M4 Pro |
 | OS/architecture | Darwin/arm64 |
 | Go | 1.25.4 |
-| Method | `go test -bench=. -benchmem ./internal/...` |
-| Samples | 1 |
+| Method | `go test -run='^$' -bench=. -benchmem -benchtime=3s -count=10 ./internal/...` |
+| Samples | 10 per benchmark |
 
-Because only one sample was recorded, these values are an orientation baseline, not a statistically rigorous regression decision. Future comparisons must use the ten-sample procedure in section 7.2.
+`benchstat` was unavailable. Median, range, sample coefficient of variation, bytes/op, and allocations/op were calculated directly from the ten Go benchmark samples.
 
 ### 8.2 Hot-path results
 
-| Benchmark | Time/op | Bytes/op | Allocations/op | Interpretation |
-| --- | ---: | ---: | ---: | --- |
-| Response serialization | 149.8 ns | 112 B | 2 | Cost to encode one NDJSON event into an in-memory buffer |
-| Instrumented batcher | 836.1 ns | 1,040 B | 15 | Admission/batch overhead including test setup and tracing API calls |
-| Token generation | 5.319 µs | 880 B | 12 | Generates and transfers 16 events through the bounded request stream |
+| Benchmark | Median | Min–max | CV | Median bytes/op | Allocations/op |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Response serialization | 151.15 ns | 150.5–152.8 ns | 0.44% | 112 B | 2 |
+| Batcher admission/drain | 334.15 ns | 283.6–477.1 ns | 15.63% | 461.5 B | 6 |
+| Token generation | 5.270 µs | 5.243–5.398 µs | 1.28% | 880 B | 12 |
 
-The batcher benchmark measures enqueue/drain mechanics, not real batch service time. The worker benchmark uses zero configured inference delay so it isolates coordination and event-transfer overhead.
+The batcher variance requires investigation before using time/op as a regression gate. Allocation count was 6 in every sample. The benchmark measures request creation, admission, and drain, not inference latency. Token generation uses zero simulated delay.
+
+Raw time/op samples:
+
+| Benchmark | Samples |
+| --- | --- |
+| Response serialization, ns | 152.8, 151.6, 151.0, 151.6, 150.5, 151.3, 151.2, 151.1, 150.7, 150.7 |
+| Batcher, ns | 326.1, 283.6, 304.4, 309.9, 327.5, 366.0, 340.8, 340.9, 376.0, 477.1 |
+| Token generation, ns | 5,243, 5,392, 5,249, 5,255, 5,246, 5,272, 5,268, 5,398, 5,360, 5,389 |
 
 ### 8.3 String aggregation optimization
 
-This experiment isolates the allocation exercise for 500 generated tokens.
-
-| Implementation | Time/op | Bytes/op | Allocations/op |
-| --- | ---: | ---: | ---: |
-| Repeated `result += token` | 188.730 µs | 1,105,899 B | 499 |
-| Pre-sized `strings.Builder` | 2.933 µs | 4,864 B | 1 |
+| Implementation | Median | Min–max | CV | Bytes/op | Allocations/op |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Repeated `result += token` | 204.873 µs | 201.583–213.245 µs | 1.58% | 1,105,904 B | 499 |
+| Pre-sized `strings.Builder` | 3.162 µs | 3.126–3.249 µs | 1.17% | 4,864 B | 1 |
 
 Calculated improvement:
 
 | Metric | Calculation | Improvement |
 | --- | --- | ---: |
-| Execution time | `188,730 / 2,933` | 64.35× faster |
-| Bytes allocated | `1,105,899 / 4,864` | 227.36× fewer bytes |
+| Execution time | `204,873 / 3,162` | 64.79× faster |
+| Bytes allocated | `1,105,904 / 4,864` | 227.36× fewer bytes |
 | Allocation count | `499 - 1` | 498 allocations removed (99.8%) |
 
-The streaming endpoint does not concatenate its response. The optimized helper exists for non-streaming consumers and as a controlled demonstration of how allocation evidence guides implementation choice.
+The streaming endpoint does not aggregate tokens. This benchmark applies to the non-streaming helper.
 
 ### 8.4 Core rewrite observation
 
-An earlier single-sample token-generation benchmark measured 5.75 µs/op, 5,672 B/op, and 58 allocations/op. After request encapsulation and bounded fan-out were introduced, the recorded result was 5.319 µs/op, 880 B/op, and 12 allocations/op.
+An earlier single-sample token-generation run measured 5.75 µs/op, 5,672 B/op, and 58 allocations/op. The current ten-sample median is 5.270 µs/op, 880 B/op, and 12 allocations/op.
 
 | Metric | Earlier | Current | Delta |
 | --- | ---: | ---: | ---: |
-| Time/op | 5.75 µs | 5.319 µs | −7.5% |
+| Time/op | 5.75 µs | 5.270 µs | −8.3% |
 | Bytes/op | 5,672 B | 880 B | −84.5% |
 | Allocations/op | 58 | 12 | −79.3% |
 
-These single-sample values suggest a material allocation improvement but must be reproduced with `-count=10` before being presented as statistically established.
+The earlier revision has only one sample, so the time comparison is descriptive. The current allocation values were stable across ten samples.
 
 ## 9. Service-level results
 
