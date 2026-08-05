@@ -394,12 +394,90 @@ The earlier revision has only one sample, so the time comparison is descriptive.
 | Streaming request through Kubernetes Service | Passed |
 | Readiness through Kubernetes Service | Passed |
 | Prometheus request/token metric emission | Passed |
-| Controlled 5-minute baseline | Not yet recorded |
+| Controlled 5-minute baseline | Recorded; latency SLOs failed |
 | Controlled 10-minute target test | Not yet recorded |
 | Overload and recovery test | Not yet recorded |
 | 60-minute soak | Not yet recorded |
 
-### 9.2 Run-result template
+### 9.2 LT-01 warm-up
+
+| Field | Result |
+| --- | --- |
+| Deployment | k3d: 1 k3s server, 1 agent |
+| Gateway replicas | 2 |
+| Offered load | 25 RPS, 50 tokens/request, 2 minutes |
+| Generator result | 3,000 sent; 3,000 success; 0 failed; 0 dropped |
+| Purpose | Warm-up only; excluded from LT-02 generator counts |
+
+### 9.3 LT-02 baseline
+
+Source revision for the deployed binary: `fd0fe46`. Later commits before the run changed tests, documentation, and Prometheus discovery but not the gateway binary.
+
+Configuration:
+
+```text
+replicas=2
+WORKER_COUNT=8
+MAX_BATCH_SIZE=8
+MAX_BATCH_WAIT=20ms
+QUEUE_CAPACITY=1000
+BASE_INFERENCE_DELAY=50ms
+PER_TOKEN_DELAY=10ms
+FAILURE_RATE=0
+OTEL_SAMPLE_RATE=1.0
+```
+
+Load-generator result:
+
+| Field | Result |
+| --- | ---: |
+| Offered load | 25 RPS |
+| Duration | 5 minutes |
+| Tokens/request | 50 |
+| Sent | 7,500 |
+| Successful | 7,500 |
+| Failed | 0 |
+| Dropped by generator | 0 |
+| Achieved completion ratio | 100% |
+
+Prometheus result:
+
+| SLI/resource | Result | Target | Status |
+| --- | ---: | ---: | --- |
+| Availability | 100% | ≥99.9% | Pass |
+| TTFT p50 | 751 ms | — | Recorded |
+| TTFT p95 | 986 ms | <300 ms | Fail |
+| TTFT p99 | 1.842 s | — | Recorded |
+| Inter-token p99 | 24.9 ms | <100 ms | Pass |
+| Request duration p95 | 2.425 s | <2 s | Fail |
+| Queue wait p99 | 421 ms | <200 ms | Fail |
+| Average batch size | 1.89 | — | Recorded |
+| Peak queue depth | 6 / 1,000 | — | Recorded |
+| Aggregate CPU rate | 0.097 cores | — | Recorded |
+| Aggregate RSS at end | 57.9 MB | — | Recorded |
+| Aggregate live heap at end | 11.1 MB | — | Recorded |
+| Goroutines at end | 51 | — | Recorded |
+| Sum of per-replica peak goroutines | 158 | — | Recorded |
+| Sum of per-replica peak active requests | 38 | — | Recorded |
+
+The Prometheus query used a trailing five-minute range evaluated after generator completion and covered approximately 7,066 of the 7,500 completions. The generator counts cover the exact run. Histogram values cover most of LT-02 and are sufficient to identify the latency failures, but this run is not a precision comparison baseline until queries are aligned to recorded start and end timestamps.
+
+Observed constraints:
+
+1. CPU usage was below 0.1 aggregate cores, so CPU saturation did not cause the latency failures.
+2. Average batch size was 1.89. At 12.5 offered RPS per replica and 550 ms simulated service time, mean worker occupancy is approximately 6.9 requests per replica before burst and load-balancing variance.
+3. Peak queue depth was only 6, but p99 queue wait was 421 ms. Worker availability, rather than queue capacity, limited admission latency.
+4. Inter-token latency passed. Delay accumulated before streaming and in total request residence time.
+
+Required follow-up:
+
+- Capture exact Unix start/end timestamps and evaluate range queries at the end timestamp.
+- Repeat LT-02 three times.
+- Capture a block/goroutine profile during steady state.
+- Compare `WORKER_COUNT=8` with `WORKER_COUNT=16` while holding all other variables constant.
+- Compare `MAX_BATCH_WAIT=20ms` with `5ms`; average batch size is already below 2 at this load.
+
+### 9.4 Run-result template
 
 | Field | Result |
 | --- | --- |
