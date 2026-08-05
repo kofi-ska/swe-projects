@@ -512,7 +512,41 @@ Contention profiling was then enabled with `BLOCK_PROFILE_RATE=1` and `MUTEX_PRO
 
 Block-profile duration sums blocked time across goroutines and can exceed wall-clock test duration. These results verify collection and identify wait locations; they are not a latency decomposition.
 
-### 9.5 Run-result template
+### 9.5 Preliminary worker-count A/B
+
+Two timestamp-aligned, three-minute windows targeted one pod through Service port-forward. Contention profiling was disabled. Both windows used 25 RPS, 50 tokens/request, batch size 8, batch wait 20 ms, and trace sample rate 1.0. Each completed 4,500/4,500 requests with no generator failures or drops.
+
+| Metric | 8 workers | 16 workers | Delta |
+| --- | ---: | ---: | ---: |
+| TTFT p50 | 761 ms | 75.0 ms | −90.1% |
+| TTFT p95 | 995 ms | 97.5 ms | −90.2% |
+| TTFT p99 | 2.136 s | 99.5 ms | −95.3% |
+| Inter-token p99 | 24.85 ms | 24.85 ms | 0.0% |
+| Request duration p95 | 2.425 s | 975 ms | −59.8% |
+| Queue wait p99 | 445 ms | 24.9 ms | −94.4% |
+| Average batch size | 1.90 | 1.00 | −47.3% |
+| Peak queue depth | 6 | 0 | −100% |
+| Aggregate CPU rate | 0.104 cores | 0.114 cores | +9.8% |
+| Sum of per-replica peak goroutines | 153 | 115 | −24.8% |
+
+| Criterion | 8 workers | 16 workers |
+| --- | --- | --- |
+| Availability ≥99.9% | Pass | Pass |
+| TTFT p95 <300 ms | Fail | Pass |
+| Inter-token p99 <100 ms | Pass | Pass |
+| Request p95 <2 s | Fail | Pass |
+| Queue wait p99 <200 ms | Fail | Pass |
+
+Interpretation:
+
+1. At 25 RPS and 550 ms service time, the selected pod carries approximately 13.75 concurrent requests. Eight workers depend on batching to meet demand; measured batch size 1.90 leaves little capacity margin.
+2. Sixteen workers process the offered concurrency without queueing. Average batch size falls to 1 because workers remain available.
+3. CPU increases by 0.010 cores. The latency improvement is not caused by additional CPU capacity; it is caused by additional waiting slots for simulated inference.
+4. The lower peak goroutine count with 16 workers is consistent with fewer queued and resident HTTP requests.
+
+This is one A/B pair, not a final configuration decision. Repeat each side at least three times for five minutes. Run the 100 RPS target and batch-size matrix before changing the checked-in worker default.
+
+### 9.6 Run-result template
 
 | Field | Result |
 | --- | --- |
