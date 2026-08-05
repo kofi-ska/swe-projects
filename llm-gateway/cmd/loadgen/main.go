@@ -30,6 +30,8 @@ func main() {
 	defer ticker.Stop()
 	ctx, cancel := context.WithTimeout(context.Background(), *duration)
 	defer cancel()
+	started := time.Now().UTC()
+	fmt.Printf("started_utc=%s started_unix=%d\n", started.Format(time.RFC3339Nano), started.Unix())
 	sem := make(chan struct{}, *maxInFlight)
 	var sent, succeeded, failed, dropped atomic.Int64
 	var wg sync.WaitGroup
@@ -38,6 +40,8 @@ func main() {
 		select {
 		case <-ctx.Done():
 			wg.Wait()
+			ended := time.Now().UTC()
+			fmt.Printf("ended_utc=%s ended_unix=%d elapsed=%s\n", ended.Format(time.RFC3339Nano), ended.Unix(), ended.Sub(started).Round(time.Millisecond))
 			fmt.Printf("sent=%d success=%d failed=%d dropped=%d\n", sent.Load(), succeeded.Load(), failed.Load(), dropped.Load())
 			return
 		case <-ticker.C:
