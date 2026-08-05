@@ -404,19 +404,20 @@ The earlier revision has only one sample, so the time comparison is descriptive.
 | Field | Result |
 | --- | --- |
 | Deployment | k3d: 1 k3s server, 1 agent |
-| Gateway replicas | 2 |
+| Ready gateway replicas | 2 |
+| Traffic path | Service port-forward; one selected backing pod |
 | Offered load | 25 RPS, 50 tokens/request, 2 minutes |
 | Generator result | 3,000 sent; 3,000 success; 0 failed; 0 dropped |
 | Purpose | Warm-up only; excluded from LT-02 generator counts |
 
 ### 9.3 LT-02 baseline
 
-Source revision for the deployed binary: `fd0fe46`. Later commits before the run changed tests, documentation, and Prometheus discovery but not the gateway binary.
+Source revision for the deployed binary: `fd0fe46`. Later commits before the run changed tests, documentation, and Prometheus discovery but not the gateway binary. Service port-forward selected one pod; LT-02 is a one-replica load result.
 
 Configuration:
 
 ```text
-replicas=2
+ready replicas=2; loaded replicas=1
 WORKER_COUNT=8
 MAX_BATCH_SIZE=8
 MAX_BATCH_WAIT=20ms
@@ -465,7 +466,7 @@ The Prometheus query used a trailing five-minute range evaluated after generator
 Observed constraints:
 
 1. CPU usage was below 0.1 aggregate cores, so CPU saturation did not cause the latency failures.
-2. Average batch size was 1.89. At 12.5 offered RPS per replica and 550 ms simulated service time, mean worker occupancy is approximately 6.9 requests per replica before burst and load-balancing variance.
+2. Average batch size was 1.89. At 25 offered RPS and 550 ms simulated service time, Little's Law gives approximately 13.75 concurrent requests on the selected pod before queueing. Eight workers require batching to sustain this load.
 3. Peak queue depth was only 6, but p99 queue wait was 421 ms. Worker availability, rather than queue capacity, limited admission latency.
 4. Inter-token latency passed. Delay accumulated before streaming and in total request residence time.
 
@@ -476,8 +477,29 @@ Required follow-up:
 - Capture a block/goroutine profile during steady state.
 - Compare `WORKER_COUNT=8` with `WORKER_COUNT=16` while holding all other variables constant.
 - Compare `MAX_BATCH_WAIT=20ms` with `5ms`; average batch size is already below 2 at this load.
+- Run the generator inside the cluster or through an ingress for multi-replica tests. Service port-forward is not a replica-scaling test path.
 
-### 9.4 Run-result template
+### 9.4 LT-02 diagnostic profile
+
+One gateway pod was profiled during a separate two-minute run at 25 RPS and 50 tokens/request. The generator completed 3,000/3,000 requests with no failures or drops.
+
+| Profile | Result |
+| --- | --- |
+| CPU duration | 30.09 s wall; 2.69 CPU-seconds; 8.94% of one core |
+| Largest flat CPU node | `internal/runtime/syscall.Syscall6`: 1.09 s, 40.52% |
+| Streaming write path | `net/http.checkConnErrorWriter.Write`: 1.03 s cumulative, 38.29% |
+| In-use heap | 7.92 MB |
+| Runtime thread allocation | `runtime.allocm`: 2.57 MB, 32.38% |
+| HTTP gzip writer | `compress/flate.NewWriter`: 1.45 MB cumulative, 18.32% |
+| Goroutines | 124 on the loaded pod |
+| HTTP connection loops | 50 in `net/http.(*conn).serve` |
+| Generate handlers | 36 in `api.(*Handler).Generate` |
+| Block profile | Empty; collection rate was zero |
+| Mutex profile | Empty; collection fraction was zero |
+
+The CPU profile is dominated by token-stream writes, not CPU saturation. A post-load goroutine profile is required for a retention comparison. Profile binaries remain under ignored `results/` paths.
+
+### 9.5 Run-result template
 
 | Field | Result |
 | --- | --- |
