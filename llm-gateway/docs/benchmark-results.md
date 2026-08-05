@@ -499,6 +499,19 @@ One gateway pod was profiled during a separate two-minute run at 25 RPS and 50 t
 
 The CPU profile is dominated by token-stream writes, not CPU saturation. A post-load goroutine profile is required for a retention comparison. Profile binaries remain under ignored `results/` paths.
 
+Contention profiling was then enabled with `BLOCK_PROFILE_RATE=1` and `MUTEX_PROFILE_FRACTION=5`. A one-minute validation run completed 1,500/1,500 requests with no failures or drops.
+
+| Profile | Validation result |
+| --- | --- |
+| Block | 3,037 goroutine-seconds cumulative delay; 76.93% in `runtime.selectgo` |
+| HTTP stream block path | 1,446 goroutine-seconds cumulative in `api.(*Handler).stream` |
+| Worker-loop block path | 682 goroutine-seconds cumulative in `pipeline.(*Pipeline).workerLoop` |
+| Mutex | 53.60 ms total sampled delay |
+| Largest mutex node | `runtime.unlock`: 49.01 ms, 91.43% |
+| Worker request mutex path | 22.88 ms cumulative, 42.68% |
+
+Block-profile duration sums blocked time across goroutines and can exceed wall-clock test duration. These results verify collection and identify wait locations; they are not a latency decomposition.
+
 ### 9.5 Run-result template
 
 | Field | Result |
