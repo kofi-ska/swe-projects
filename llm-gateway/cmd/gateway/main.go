@@ -51,8 +51,8 @@ func main() {
 		}
 		writeHealth(w, http.StatusOK, "ready")
 	})
-	server := &http.Server{Addr: ":" + cfg.HTTPPort, Handler: mux, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second}
-	admin := &http.Server{Addr: cfg.PprofAddress, Handler: http.DefaultServeMux, ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Addr: ":" + cfg.HTTPPort, Handler: mux, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 1 << 20}
+	admin := &http.Server{Addr: cfg.PprofAddress, Handler: http.DefaultServeMux, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 1 << 16}
 	errCh := make(chan error, 2)
 	go func() { slog.Info("gateway listening", "address", server.Addr); errCh <- server.ListenAndServe() }()
 	go func() { slog.Info("pprof listening", "address", admin.Addr); errCh <- admin.ListenAndServe() }()
