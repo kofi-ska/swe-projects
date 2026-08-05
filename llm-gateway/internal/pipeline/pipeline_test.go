@@ -169,11 +169,19 @@ func TestCancelledQueuedRequestIsDropped(t *testing.T) {
 }
 
 func BenchmarkBatcher(b *testing.B) {
-	r := &recorder{called: make(chan struct{}, b.N)}
-	p := New(b.N+1, 8, 4, time.Microsecond, r, nil)
+	p := New(b.N+1, 8, 4, time.Microsecond, benchmarkProcessor{}, nil)
 	b.ResetTimer()
 	for range b.N {
 		_ = p.Enqueue(request(context.Background()))
 	}
-	shutdown(b, p)
+	b.StopTimer()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := p.Shutdown(ctx); err != nil {
+		b.Fatal(err)
+	}
 }
+
+type benchmarkProcessor struct{}
+
+func (benchmarkProcessor) Process(context.Context, int, []*Request) {}
