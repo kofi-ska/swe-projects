@@ -1,6 +1,6 @@
 # Go LLM Inference Gateway Simulator
 
-A production-style Go service that models the control plane around LLM inference: bounded admission, dynamic batching, a fixed worker pool, cancellable NDJSON streaming, Prometheus SLI metrics, OpenTelemetry traces, pprof, and explicit overload behavior.
+Go service that simulates an LLM inference gateway with bounded admission, dynamic batching, a fixed worker pool, cancellable NDJSON streaming, metrics, traces, and profiling.
 
 The model is simulated. No GPU or external model API is required.
 
@@ -12,7 +12,7 @@ client -> HTTP validation -> bounded queue -> dynamic batcher -> worker pool
    +-------------------- NDJSON token stream ----------------+
 ```
 
-The bounded queue and fixed number of workers are the central safety properties. A full queue produces an immediate `503` with `Retry-After`. Batch streaming uses at most `WORKER_COUNT × MAX_BATCH_SIZE` request goroutines, so a slow client cannot block its batch siblings and offered load cannot create unbounded worker fan-out.
+A full queue returns `503` with `Retry-After`. Worker request fan-out is bounded by `WORKER_COUNT × MAX_BATCH_SIZE`. Each request has a write deadline and a one-event buffer.
 
 ## Run locally
 
@@ -47,7 +47,7 @@ Endpoints:
 docker compose up --build
 ```
 
-This starts the gateway (`:8080`), Grafana (`:3000`), Prometheus (`:9090`), and Jaeger (`:16686`). pprof is bound to loopback at `:6060`. Dashboards and the Prometheus data source are provisioned automatically.
+Ports: gateway `8080`, Grafana `3000`, Prometheus `9090`, Jaeger `16686`, loopback-only pprof `6060`.
 
 ## k3s
 
@@ -59,7 +59,7 @@ make k3s-deploy
 kubectl -n llm-gateway rollout status deployment/gateway
 ```
 
-On macOS, k3d runs k3s nodes in Docker. This repository has also been exercised with a one-server, one-agent k3d cluster:
+For k3s through k3d on macOS:
 
 ```bash
 make k3d-create
@@ -79,7 +79,7 @@ kubectl -n llm-gateway port-forward service/prometheus 9090:9090
 kubectl -n llm-gateway port-forward service/jaeger 16686:16686
 ```
 
-pprof is deliberately absent from the Kubernetes Service. Open it only when needed:
+pprof is not exposed by the Kubernetes Service:
 
 ```bash
 kubectl -n llm-gateway port-forward deployment/gateway 6060:6060
@@ -106,13 +106,28 @@ For a dependency-free short run, use the Go load generator:
 go run ./cmd/loadgen -rps 25 -duration 30s -tokens 50
 ```
 
-## Reliability model
+## Non-functional requirements
 
-Every request ends with exactly one low-cardinality outcome: `success`, `invalid`, `cancelled`, `overloaded`, `timeout`, or `internal_error`. Invalid input and client cancellation are excluded from availability; service-controlled overload, timeout, and processing errors consume the error budget.
+| ID | Requirement | SLI / acceptance target | Implementation |
+| --- | --- | --- | --- |
+| NFR-1 | Availability | ≥99.9% over 30 days | Final outcomes are `success`, `invalid`, `cancelled`, `overloaded`, `timeout`, or `internal_error`. Availability includes service-controlled failures and excludes invalid input and client cancellation. |
+| NFR-2 | Initial response latency | TTFT p95 <300 ms over 7 days | Maximum batch wait, queue-wait histogram, first-token timestamp, fixed worker pool. |
+| NFR-3 | Streaming responsiveness | Inter-token p99 <100 ms over 7 days | Per-token delay, token flush, one-event buffer, stream write deadline. |
+| NFR-4 | End-to-end latency | p95 <2 s for requests ≤100 tokens | Request deadline, cancellable queue and worker contexts, duration histogram. |
+| NFR-5 | Throughput | Sustain 100 successful RPS for 10 minutes at 50 tokens/request | Dynamic batches of up to 8 across 8 workers. This remains a test target, not a recorded result. |
+| NFR-6 | Overload protection | 100% explicit capacity rejection; no indefinite wait | Queue capacity 1,000; non-blocking admission; `503` and `Retry-After`; readiness fails above 80% queue utilization. |
+| NFR-7 | Resource efficiency | No sustained heap, RSS, or goroutine growth after warm-up | Bounded queue, fixed worker pool, maximum 64 worker fan-out goroutines with defaults, cancellable event delivery. |
+| NFR-8 | Observability | Identify affected SLI and pipeline stage | Prometheus request/queue/batch/runtime metrics, OpenTelemetry spans, Jaeger, pprof. |
+| NFR-9 | Privacy | No prompts, tokens, credentials, or user identifiers in telemetry | Only prompt length, token limit, priority, queue depth, batch size, worker ID, and token count are recorded. |
+| NFR-10 | Operability | Health checks, graceful shutdown, dashboards, alerts, runbooks | Separate live/ready probes; admission closes before drain; 15-second shutdown deadline; provisioned operational assets. |
 
-Initial targets are 99.9% availability over 30 days, p95 time to first token below 300 ms, p99 queue wait below 200 ms, and p95 completion below two seconds for requests up to 100 tokens. The SLO dashboard and alert rules encode those targets.
+Availability calculation:
 
-Prompts and generated text are never placed in logs, metrics, trace attributes, or profiling labels. Traces contain only bounded metadata such as prompt length, maximum token count, priority, queue depth, batch size, and worker ID.
+```text
+success / (success + overloaded + timeout + internal_error)
+```
+
+The full measurement protocol and current evidence are in [docs/benchmark-results.md](docs/benchmark-results.md).
 
 ## Configuration
 
@@ -134,8 +149,14 @@ Prompts and generated text are never placed in logs, metrics, trace attributes, 
 | `OTEL_SAMPLE_RATE` | `1.0` |
 | `READINESS_SATURATION` | `0.8` |
 
-Invalid values fail startup. Use a lower trace sampling rate during sustained load.
+Invalid values fail startup. Keep trace sampling fixed within a benchmark comparison.
 
-## Operational investigation
+## Diagnostics
 
-Start with Grafana to confirm user impact, use Jaeger to locate time in queue/batch/inference/streaming, then use pprof to identify the responsible Go code. Change one variable, repeat the identical load scenario, and compare latency, throughput, allocation, heap, and goroutine trends. Runbooks under `runbooks/` cover queue saturation, latency, and error-rate incidents.
+| Question | Source |
+| --- | --- |
+| Are SLIs passing? | Grafana and Prometheus |
+| Which pipeline stage is slow? | Jaeger |
+| Which code consumes CPU or allocates memory? | pprof |
+| Are goroutines blocked or retained? | Goroutine, block, and mutex profiles |
+| What is the incident procedure? | `runbooks/` |
