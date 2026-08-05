@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: llm-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: gateway}
+  template:
+    metadata:
+      labels: {app: gateway}
+    spec:
+      terminationGracePeriodSeconds: 20
+      containers:
+        - name: gateway
+          image: llm-gateway:local
+          imagePullPolicy: Never
+          env:
+            - {name: PPROF_ADDRESS, value: "0.0.0.0:6060"}
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "jaeger:4317"}
+            - {name: FAILURE_RATE, value: "0"}
+          ports:
+            - {name: http, containerPort: 8080}
+            - {name: pprof, containerPort: 6060}
+          readinessProbe:
+            httpGet: {path: /health/ready, port: http}
+            periodSeconds: 3
+          livenessProbe:
+            httpGet: {path: /health/live, port: http}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: "1", memory: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: llm-gateway
+  labels: {app: gateway}
+spec:
+  selector: {app: gateway}
+  ports:
+    - {name: http, port: 8080, targetPort: http}
+  type: ClusterIP
