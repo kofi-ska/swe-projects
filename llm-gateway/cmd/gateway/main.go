@@ -38,15 +38,13 @@ func main() {
 	reg.MustRegister(prometheus.NewGoCollector(), prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
 	metrics := observability.NewMetrics(reg, cfg.QueueCapacity)
 	p := pipeline.New(cfg.QueueCapacity, cfg.MaxBatchSize, cfg.WorkerCount, cfg.MaxBatchWait, worker.Worker{BaseDelay: cfg.BaseInferenceDelay, TokenDelay: cfg.PerTokenDelay, FailureRate: cfg.FailureRate}, metrics)
-	p.Start()
-	defer p.Stop()
-	h := &api.Handler{Pipeline: p, Metrics: metrics, Timeout: cfg.RequestTimeout}
+	h := &api.Handler{Pipeline: p, Metrics: metrics, Timeout: cfg.RequestTimeout, WriteTimeout: cfg.StreamWriteTimeout}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/generate", h.Generate)
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	mux.HandleFunc("/health/live", func(w http.ResponseWriter, r *http.Request) { writeHealth(w, http.StatusOK, "live") })
 	mux.HandleFunc("/health/ready", func(w http.ResponseWriter, r *http.Request) {
-		ready := !isDone(ctx) && p.Running() && p.Workers() > 0 && float64(p.QueueDepth())/float64(p.QueueCapacity()) < cfg.ReadinessSaturation
+		ready := !isDone(ctx) && p.Workers() > 0 && p.Ready(cfg.ReadinessSaturation)
 		if !ready {
 			writeHealth(w, http.StatusServiceUnavailable, "not ready")
 			return
@@ -70,7 +68,9 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
 	_ = server.Shutdown(shutdownCtx)
-	p.Stop()
+	if err := p.Shutdown(shutdownCtx); err != nil {
+		slog.Warn("pipeline shutdown deadline exceeded", "error", err)
+	}
 	_ = admin.Shutdown(shutdownCtx)
 	if err := tp.Shutdown(shutdownCtx); err != nil {
 		slog.Warn("flush traces", "error", err)

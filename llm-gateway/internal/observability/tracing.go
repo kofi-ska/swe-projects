@@ -16,7 +16,7 @@ func InitTracing(ctx context.Context, endpoint string, sampleRate float64) (*tra
 	if err != nil {
 		return nil, fmt.Errorf("create OTLP exporter: %w", err)
 	}
-	res, err := resource.Merge(resource.Default(), resource.NewWithAttributes(semconv.SchemaURL, semconv.ServiceName("llm-gateway")))
+	res, err := resource.Merge(resource.Default(), resource.NewSchemaless(semconv.ServiceName("llm-gateway")))
 	if err != nil {
 		return nil, err
 	}

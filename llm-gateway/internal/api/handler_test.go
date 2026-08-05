@@ -21,16 +21,26 @@ func testHandler(t *testing.T, started bool, timeout time.Duration) (*Handler, *
 	reg := prometheus.NewRegistry()
 	m := observability.NewMetrics(reg, 4)
 	p := pipeline.New(4, 2, 1, time.Millisecond, worker.Worker{}, m)
-	if started {
-		p.Start()
+	if !started {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := p.Shutdown(ctx); err != nil {
+			t.Fatal(err)
+		}
 	}
-	return &Handler{Pipeline: p, Metrics: m, Timeout: timeout}, p
+	return &Handler{Pipeline: p, Metrics: m, Timeout: timeout, WriteTimeout: time.Second}, p
+}
+
+func stopPipeline(p *pipeline.Pipeline) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_ = p.Shutdown(ctx)
 }
 
 func TestValidation(t *testing.T) {
 	h, p := testHandler(t, true, time.Second)
-	defer p.Stop()
-	cases := []string{`{"prompt":"","max_tokens":1,"priority":"normal"}`, `{"prompt":"ok","max_tokens":0,"priority":"normal"}`, `{"prompt":"ok","max_tokens":1,"priority":"urgent"}`}
+	defer stopPipeline(p)
+	cases := []string{`{"prompt":"","max_tokens":1,"priority":"normal"}`, `{"prompt":"ok","max_tokens":0,"priority":"normal"}`, `{"prompt":"ok","max_tokens":1,"priority":"urgent"}`, `{"prompt":"ok","max_tokens":1,"priority":"normal"} {}`}
 	for _, body := range cases {
 		rr := httptest.NewRecorder()
 		h.Generate(rr, httptest.NewRequest(http.MethodPost, route, strings.NewReader(body)))
@@ -42,7 +52,7 @@ func TestValidation(t *testing.T) {
 
 func TestStreamingResponse(t *testing.T) {
 	h, p := testHandler(t, true, time.Second)
-	defer p.Stop()
+	defer stopPipeline(p)
 	rr := httptest.NewRecorder()
 	h.Generate(rr, httptest.NewRequest(http.MethodPost, route, strings.NewReader(`{"prompt":"hello","max_tokens":3,"priority":"normal"}`)))
 	if rr.Code != http.StatusOK {
@@ -74,9 +84,8 @@ func TestTimeoutStopsRequest(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	m := observability.NewMetrics(reg, 1)
 	p := pipeline.New(1, 1, 1, time.Millisecond, worker.Worker{BaseDelay: time.Second}, m)
-	p.Start()
-	defer p.Stop()
-	h := &Handler{Pipeline: p, Metrics: m, Timeout: 5 * time.Millisecond}
+	defer stopPipeline(p)
+	h := &Handler{Pipeline: p, Metrics: m, Timeout: 5 * time.Millisecond, WriteTimeout: time.Second}
 	rr := httptest.NewRecorder()
 	h.Generate(rr, httptest.NewRequest(http.MethodPost, route, strings.NewReader(`{"prompt":"hello","max_tokens":1,"priority":"normal"}`)))
 	if rr.Body.Len() != 0 {
@@ -86,7 +95,7 @@ func TestTimeoutStopsRequest(t *testing.T) {
 
 func TestClientCancellation(t *testing.T) {
 	h, p := testHandler(t, true, time.Second)
-	defer p.Stop()
+	defer stopPipeline(p)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	rr := httptest.NewRecorder()

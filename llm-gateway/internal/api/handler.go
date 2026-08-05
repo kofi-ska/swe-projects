@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -35,6 +36,7 @@ type Handler struct {
 	Pipeline     *pipeline.Pipeline
 	Metrics      *observability.Metrics
 	Timeout      time.Duration
+	WriteTimeout time.Duration
 	shuttingDown atomic.Bool
 }
 
@@ -62,6 +64,11 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "invalid JSON request")
 		return
 	}
+	if err := ensureEOF(dec); err != nil {
+		outcome = "invalid"
+		writeJSONError(w, http.StatusBadRequest, "request body must contain one JSON object")
+		return
+	}
 	if msg := validate(in); msg != "" {
 		outcome = "invalid"
 		writeJSONError(w, http.StatusBadRequest, msg)
@@ -79,8 +86,7 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 	ctx, span := otel.Tracer("llm-gateway/api").Start(ctx, "POST "+route)
 	defer span.End()
 	span.SetAttributes(attribute.Int("request.max_tokens", in.MaxTokens), attribute.Int("request.prompt_length", utf8.RuneCountInString(in.Prompt)), attribute.String("request.priority", in.Priority))
-	events := make(chan pipeline.Event, 1)
-	req := &pipeline.Request{Context: ctx, MaxTokens: in.MaxTokens, Priority: in.Priority, Enqueued: time.Now(), Events: events}
+	req := pipeline.NewRequest(ctx, in.MaxTokens, in.Priority)
 	_, enqueueSpan := otel.Tracer("llm-gateway/pipeline").Start(ctx, "enqueue-request")
 	err := h.Pipeline.Enqueue(req)
 	enqueueSpan.End()
@@ -102,6 +108,7 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	enc := json.NewEncoder(w)
+	controller := http.NewResponseController(w)
 	_, streamSpan := otel.Tracer("llm-gateway/api").Start(ctx, "stream-response")
 	defer streamSpan.End()
 	first := true
@@ -119,10 +126,11 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 				streamSpan.AddEvent("client.cancelled")
 			}
 			return
-		case e := <-events:
+		case e := <-req.Events():
 			if e.Err != nil {
 				outcome = "internal_error"
 				span.SetStatus(codes.Error, e.Err.Error())
+				_ = controller.SetWriteDeadline(time.Now().Add(h.WriteTimeout))
 				_ = enc.Encode(streamEvent{Error: "inference failed"})
 				flusher.Flush()
 				return
@@ -138,11 +146,23 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 				}
 				last = now
 				h.Metrics.Tokens.Inc()
-				_ = enc.Encode(streamEvent{Token: e.Token})
+				_ = controller.SetWriteDeadline(time.Now().Add(h.WriteTimeout))
+				if err := enc.Encode(streamEvent{Token: e.Token}); err != nil {
+					outcome = "cancelled"
+					h.Metrics.Cancelled.Inc()
+					cancel()
+					return
+				}
 				flusher.Flush()
 			}
 			if e.Done {
-				_ = enc.Encode(streamEvent{Done: true, Tokens: e.Tokens})
+				_ = controller.SetWriteDeadline(time.Now().Add(h.WriteTimeout))
+				if err := enc.Encode(streamEvent{Done: true, Tokens: e.Tokens}); err != nil {
+					outcome = "cancelled"
+					h.Metrics.Cancelled.Inc()
+					cancel()
+					return
+				}
 				flusher.Flush()
 				outcome = "success"
 				span.SetAttributes(attribute.Int("response.token_count", e.Tokens))
@@ -150,6 +170,18 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+func ensureEOF(decoder *json.Decoder) error {
+	var extra any
+	err := decoder.Decode(&extra)
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return errors.New("unexpected trailing JSON value")
 }
 
 func validate(r GenerateRequest) string {
