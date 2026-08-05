@@ -16,4 +16,4 @@ image:
 k3s-import: image
 	docker save llm-gateway:local | sudo k3s ctr images import -
 k3s-deploy:
-	kubectl apply -k k8s
+	kubectl apply -k .

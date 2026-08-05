@@ -1,0 +1,6 @@
+{"uid":"llm-capacity","title":"LLM Gateway - Batching and Capacity","schemaVersion":41,"refresh":"5s","time":{"from":"now-1h","to":"now"},"panels":[
+{"id":1,"type":"timeseries","title":"Queue utilization","gridPos":{"x":0,"y":0,"w":8,"h":8},"targets":[{"expr":"llm_gateway_queue_depth / llm_gateway_queue_capacity","legendFormat":"utilization"}],"fieldConfig":{"defaults":{"unit":"percentunit"}}},
+{"id":2,"type":"timeseries","title":"Queue wait p99","gridPos":{"x":8,"y":0,"w":8,"h":8},"targets":[{"expr":"histogram_quantile(0.99,sum by(le)(rate(llm_gateway_queue_wait_seconds_bucket[5m])))","legendFormat":"p99"}]},
+{"id":3,"type":"timeseries","title":"Queue rejections","gridPos":{"x":16,"y":0,"w":8,"h":8},"targets":[{"expr":"rate(llm_gateway_queue_rejections_total[1m])","legendFormat":"rejections/s"}]},
+{"id":4,"type":"timeseries","title":"Average batch size","gridPos":{"x":0,"y":8,"w":12,"h":8},"targets":[{"expr":"sum(rate(llm_gateway_batch_size_sum[5m])) / sum(rate(llm_gateway_batch_size_count[5m]))","legendFormat":"size"}]},
+{"id":5,"type":"timeseries","title":"Active workers and processing p95","gridPos":{"x":12,"y":8,"w":12,"h":8},"targets":[{"expr":"llm_gateway_active_workers","legendFormat":"workers"},{"expr":"histogram_quantile(0.95,sum by(le)(rate(llm_gateway_batch_processing_seconds_bucket[5m])))","legendFormat":"processing p95"}]}]}

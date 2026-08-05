@@ -1,0 +1,6 @@
+{"uid":"llm-runtime","title":"LLM Gateway - Go Runtime","schemaVersion":41,"refresh":"5s","time":{"from":"now-1h","to":"now"},"panels":[
+{"id":1,"type":"timeseries","title":"CPU cores","gridPos":{"x":0,"y":0,"w":8,"h":8},"targets":[{"expr":"rate(process_cpu_seconds_total[1m])","legendFormat":"CPU"}]},
+{"id":2,"type":"timeseries","title":"Resident and heap memory","gridPos":{"x":8,"y":0,"w":8,"h":8},"targets":[{"expr":"process_resident_memory_bytes","legendFormat":"RSS"},{"expr":"go_memstats_heap_alloc_bytes","legendFormat":"heap"}]},
+{"id":3,"type":"timeseries","title":"Goroutines","gridPos":{"x":16,"y":0,"w":8,"h":8},"targets":[{"expr":"go_goroutines","legendFormat":"goroutines"}]},
+{"id":4,"type":"timeseries","title":"Allocation rate","gridPos":{"x":0,"y":8,"w":12,"h":8},"targets":[{"expr":"rate(go_memstats_alloc_bytes_total[1m])","legendFormat":"bytes/s"}]},
+{"id":5,"type":"timeseries","title":"GC duration p95","gridPos":{"x":12,"y":8,"w":12,"h":8},"targets":[{"expr":"histogram_quantile(0.95,sum by(le)(rate(go_gc_duration_seconds_bucket[5m])))","legendFormat":"p95"}]}]}
