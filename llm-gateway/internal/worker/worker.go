@@ -7,6 +7,10 @@ import (
 	"time"
 
 	"github.com/kofi-ska/llm-gateway/internal/pipeline"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Worker struct {
@@ -17,10 +21,28 @@ type Worker struct {
 var vocabulary = []string{" Distributed", " systems", " coordinate", " work", " across", " independent", " components", " while", " preserving", " reliability", ",", " visibility", ", and", " controlled", " failure", "."}
 
 func (w Worker) Process(parent context.Context, id int, batch []*pipeline.Request) {
+	type requestSpan struct {
+		request *pipeline.Request
+		span    trace.Span
+	}
+	spans := make([]requestSpan, 0, len(batch))
+	for _, r := range batch {
+		_, span := otel.Tracer("llm-gateway/worker").Start(r.Context, "fake-model-inference")
+		span.SetAttributes(attribute.Int("worker.id", id), attribute.Int("batch.size", len(batch)))
+		spans = append(spans, requestSpan{request: r, span: span})
+	}
+	defer func() {
+		for _, item := range spans {
+			item.span.End()
+		}
+	}()
 	if !sleep(parent, w.BaseDelay) {
 		return
 	}
 	if rand.Float64() < w.FailureRate {
+		for _, item := range spans {
+			item.span.SetStatus(codes.Error, "simulated inference failure")
+		}
 		for _, r := range batch {
 			send(r, pipeline.Event{Err: fmt.Errorf("worker %d simulated failure", id)})
 		}

@@ -6,6 +6,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 var ErrQueueFull = errors.New("request queue is full")
@@ -134,7 +137,11 @@ func (p *Pipeline) batchLoop() {
 			live := batch[:0]
 			for _, r := range batch {
 				if r.Context.Err() == nil {
-					p.observer.QueueWait(time.Since(r.Enqueued))
+					wait := time.Since(r.Enqueued)
+					_, span := otel.Tracer("llm-gateway/pipeline").Start(r.Context, "wait-in-queue")
+					span.SetAttributes(attribute.Float64("queue.wait_seconds", wait.Seconds()))
+					span.End()
+					p.observer.QueueWait(wait)
 					live = append(live, r)
 				}
 			}
@@ -143,6 +150,12 @@ func (p *Pipeline) batchLoop() {
 				continue
 			}
 			p.observer.Batch(len(live), time.Since(started))
+			for _, r := range live {
+				_, span := otel.Tracer("llm-gateway/pipeline").Start(r.Context, "form-batch")
+				span.SetAttributes(attribute.Int("batch.size", len(live)), attribute.Int("queue.depth", len(p.queue)))
+				span.AddEvent("batch.formed")
+				span.End()
+			}
 			select {
 			case p.batches <- live:
 			case <-p.ctx.Done():

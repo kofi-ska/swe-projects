@@ -102,6 +102,8 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	enc := json.NewEncoder(w)
+	_, streamSpan := otel.Tracer("llm-gateway/api").Start(ctx, "stream-response")
+	defer streamSpan.End()
 	first := true
 	var last time.Time
 	for {
@@ -114,6 +116,7 @@ func (h *Handler) Generate(w http.ResponseWriter, r *http.Request) {
 			} else {
 				outcome = "cancelled"
 				h.Metrics.Cancelled.Inc()
+				streamSpan.AddEvent("client.cancelled")
 			}
 			return
 		case e := <-events:
