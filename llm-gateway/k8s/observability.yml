@@ -37,6 +37,9 @@ data:
           - source_labels: [__meta_kubernetes_service_name]
             regex: gateway
             action: keep
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            regex: http
+            action: keep
 ---
 apiVersion: apps/v1
 kind: Deployment
