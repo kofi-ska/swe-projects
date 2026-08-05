@@ -8,21 +8,23 @@ import (
 )
 
 type Config struct {
-	HTTPPort            string
-	PprofAddress        string
-	OTLPEndpoint        string
-	QueueCapacity       int
-	WorkerCount         int
-	MaxBatchSize        int
-	MaxBatchWait        time.Duration
-	RequestTimeout      time.Duration
-	StreamWriteTimeout  time.Duration
-	ShutdownTimeout     time.Duration
-	BaseInferenceDelay  time.Duration
-	PerTokenDelay       time.Duration
-	FailureRate         float64
-	OTELSampleRate      float64
-	ReadinessSaturation float64
+	HTTPPort             string
+	PprofAddress         string
+	OTLPEndpoint         string
+	QueueCapacity        int
+	WorkerCount          int
+	MaxBatchSize         int
+	BlockProfileRate     int
+	MutexProfileFraction int
+	MaxBatchWait         time.Duration
+	RequestTimeout       time.Duration
+	StreamWriteTimeout   time.Duration
+	ShutdownTimeout      time.Duration
+	BaseInferenceDelay   time.Duration
+	PerTokenDelay        time.Duration
+	FailureRate          float64
+	OTELSampleRate       float64
+	ReadinessSaturation  float64
 }
 
 func Load() (Config, error) {
@@ -39,6 +41,12 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	if config.MaxBatchSize, err = integer("MAX_BATCH_SIZE", 8); err != nil {
+		return Config{}, err
+	}
+	if config.BlockProfileRate, err = integer("BLOCK_PROFILE_RATE", 0); err != nil {
+		return Config{}, err
+	}
+	if config.MutexProfileFraction, err = integer("MUTEX_PROFILE_FRACTION", 0); err != nil {
 		return Config{}, err
 	}
 	if config.MaxBatchWait, err = duration("MAX_BATCH_WAIT", 20*time.Millisecond); err != nil {
@@ -77,6 +85,9 @@ func Load() (Config, error) {
 	}
 	if config.MaxBatchSize < 1 {
 		return Config{}, fmt.Errorf("MAX_BATCH_SIZE must be positive")
+	}
+	if config.BlockProfileRate < 0 || config.MutexProfileFraction < 0 {
+		return Config{}, fmt.Errorf("profiling rates must not be negative")
 	}
 	if config.MaxBatchWait <= 0 || config.RequestTimeout <= 0 || config.StreamWriteTimeout <= 0 || config.ShutdownTimeout <= 0 {
 		return Config{}, fmt.Errorf("wait and timeout durations must be positive")

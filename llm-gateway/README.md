@@ -139,6 +139,8 @@ The full measurement protocol and current evidence are in [docs/benchmark-result
 | `WORKER_COUNT` | `8` |
 | `MAX_BATCH_SIZE` | `8` |
 | `MAX_BATCH_WAIT` | `20ms` |
+| `BLOCK_PROFILE_RATE` | `0` |
+| `MUTEX_PROFILE_FRACTION` | `0` |
 | `REQUEST_TIMEOUT` | `10s` |
 | `STREAM_WRITE_TIMEOUT` | `1s` |
 | `SHUTDOWN_TIMEOUT` | `15s` |
@@ -150,6 +152,8 @@ The full measurement protocol and current evidence are in [docs/benchmark-result
 | `READINESS_SATURATION` | `0.8` |
 
 Invalid values fail startup. Keep trace sampling fixed within a benchmark comparison.
+
+Block and mutex profiling are disabled by default because they add overhead. The supplied Compose and Kubernetes configurations enable block rate `1` and mutex fraction `5` for profiling exercises.
 
 ## Diagnostics
 

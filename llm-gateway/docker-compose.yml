@@ -5,6 +5,8 @@ services:
       PPROF_ADDRESS: 0.0.0.0:6060
       OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
       FAILURE_RATE: "0"
+      BLOCK_PROFILE_RATE: "1"
+      MUTEX_PROFILE_FRACTION: "5"
     ports: ["8080:8080", "127.0.0.1:6060:6060"]
     depends_on: [jaeger]
   jaeger:

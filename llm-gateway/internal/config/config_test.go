@@ -9,6 +9,13 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsNegativeProfilingRate(t *testing.T) {
+	t.Setenv("BLOCK_PROFILE_RATE", "-1")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected negative profiling rate to fail")
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	c, err := Load()
 	if err != nil {

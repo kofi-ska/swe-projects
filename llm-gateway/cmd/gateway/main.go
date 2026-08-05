@@ -9,6 +9,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -27,6 +28,8 @@ func main() {
 		slog.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
+	runtime.SetBlockProfileRate(cfg.BlockProfileRate)
+	runtime.SetMutexProfileFraction(cfg.MutexProfileFraction)
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	tp, err := observability.InitTracing(ctx, cfg.OTLPEndpoint, cfg.OTELSampleRate)

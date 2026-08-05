@@ -20,6 +20,8 @@ spec:
             - {name: PPROF_ADDRESS, value: "0.0.0.0:6060"}
             - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "jaeger:4317"}
             - {name: FAILURE_RATE, value: "0"}
+            - {name: BLOCK_PROFILE_RATE, value: "1"}
+            - {name: MUTEX_PROFILE_FRACTION, value: "5"}
           ports:
             - {name: http, containerPort: 8080}
             - {name: pprof, containerPort: 6060}
