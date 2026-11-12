@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: position-service
+  datasource:
+    url: ${POSITION_DB_URL:jdbc:postgresql://localhost:5433/position_db}
+    username: ${POSITION_DB_USER:powerliq}
+    password: ${POSITION_DB_PASSWORD:powerliq-local}
+    hikari:
+      maximum-pool-size: ${POSITION_DB_POOL_MAX:10}
+      minimum-idle: ${POSITION_DB_POOL_MIN:1}
+      connection-timeout: 2000
+      validation-timeout: 1000
+  flyway:
+    enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+server:
+  port: ${POSITION_HTTP_PORT:8081}
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: ${POSITION_HTTP_THREADS_MAX:50}
+      min-spare: 5
+    accept-count: 50
+    connection-timeout: 3s
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
