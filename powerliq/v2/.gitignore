@@ -4,3 +4,7 @@ target/
 .idea/
 *.iml
 .vscode/
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log

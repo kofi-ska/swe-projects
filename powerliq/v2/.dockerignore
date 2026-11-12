@@ -1,0 +1,6 @@
+**/target
+.git
+.idea
+*.iml
+infra/terraform/.terraform
+infra/terraform/*.tfstate*

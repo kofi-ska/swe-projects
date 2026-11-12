@@ -1,0 +1,4 @@
+alert_email       = "powerliq-ops@example.com"
+certificate_arn   = "arn:aws:acm:eu-west-2:123456789012:certificate/replace-me"
+monthly_budget_usd = 100
+image_tag          = "replace-with-immutable-release-tag"

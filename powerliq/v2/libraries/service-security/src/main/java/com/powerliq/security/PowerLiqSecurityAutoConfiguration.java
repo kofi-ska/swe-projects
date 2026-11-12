@@ -18,9 +18,9 @@ public class PowerLiqSecurityAutoConfiguration {
         return common(http)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
-                        .requestMatchers("/internal/**").hasAuthority("SCOPE_powerliq.internal")
-                        .requestMatchers(HttpMethod.GET, "/api/**").hasAuthority("SCOPE_powerliq.read")
-                        .requestMatchers("/api/**").hasAuthority("SCOPE_powerliq.write")
+                        .requestMatchers("/internal/**").hasAuthority("SCOPE_powerliq/internal")
+                        .requestMatchers(HttpMethod.GET, "/api/**").hasAuthority("SCOPE_powerliq/read")
+                        .requestMatchers("/api/**").hasAuthority("SCOPE_powerliq/write")
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()))
                 .exceptionHandling(errors -> errors

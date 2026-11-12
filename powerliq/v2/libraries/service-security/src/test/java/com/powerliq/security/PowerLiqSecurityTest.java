@@ -27,11 +27,11 @@ class PowerLiqSecurityTest {
         mvc.perform(get("/api/v2/resource")).andExpect(status().isUnauthorized());
     }
     @Test void separatesReadWriteAndInternalScopes() throws Exception {
-        mvc.perform(get("/api/v2/resource").with(jwt().authorities(() -> "SCOPE_powerliq.read"))).andExpect(status().isOk());
-        mvc.perform(post("/api/v2/resource").with(jwt().authorities(() -> "SCOPE_powerliq.read"))).andExpect(status().isForbidden());
-        mvc.perform(post("/api/v2/resource").with(jwt().authorities(() -> "SCOPE_powerliq.write"))).andExpect(status().isOk());
-        mvc.perform(post("/internal/v2/event").with(jwt().authorities(() -> "SCOPE_powerliq.write"))).andExpect(status().isForbidden());
-        mvc.perform(post("/internal/v2/event").with(jwt().authorities(() -> "SCOPE_powerliq.internal"))).andExpect(status().isOk());
+        mvc.perform(get("/api/v2/resource").with(jwt().authorities(() -> "SCOPE_powerliq/read"))).andExpect(status().isOk());
+        mvc.perform(post("/api/v2/resource").with(jwt().authorities(() -> "SCOPE_powerliq/read"))).andExpect(status().isForbidden());
+        mvc.perform(post("/api/v2/resource").with(jwt().authorities(() -> "SCOPE_powerliq/write"))).andExpect(status().isOk());
+        mvc.perform(post("/internal/v2/event").with(jwt().authorities(() -> "SCOPE_powerliq/write"))).andExpect(status().isForbidden());
+        mvc.perform(post("/internal/v2/event").with(jwt().authorities(() -> "SCOPE_powerliq/internal"))).andExpect(status().isOk());
     }
     @Test void exposesHealthWithoutCredentials() throws Exception {
         // This isolated library test has no Actuator endpoint; 404 proves the request passed security.
