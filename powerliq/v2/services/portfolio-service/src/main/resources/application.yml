@@ -1,0 +1,18 @@
+spring:
+  application.name: portfolio-service
+  datasource:
+    url: ${PORTFOLIO_DB_URL:jdbc:postgresql://localhost:5434/portfolio_db}
+    username: ${PORTFOLIO_DB_USER:powerliq}
+    password: ${PORTFOLIO_DB_PASSWORD:powerliq-local}
+    hikari:
+      maximum-pool-size: ${PORTFOLIO_DB_POOL_MAX:10}
+      connection-timeout: 2000
+server:
+  port: ${PORTFOLIO_HTTP_PORT:8082}
+  shutdown: graceful
+  tomcat:
+    threads.max: 50
+    accept-count: 50
+management:
+  endpoints.web.exposure.include: health,info,metrics,prometheus
+  endpoint.health.probes.enabled: true
