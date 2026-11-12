@@ -18,12 +18,20 @@
     <name>PowerLiq V2</name>
 
     <modules>
+        <module>contracts/event-contracts</module>
         <module>libraries/financial-core</module>
+        <module>services/position-service</module>
+        <module>services/portfolio-service</module>
+        <module>services/market-ingestion-service</module>
+        <module>services/market-data-service</module>
+        <module>services/valuation-service</module>
+        <module>tests/architecture</module>
     </modules>
 
     <properties>
         <java.version>21</java.version>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <archunit.version>1.4.1</archunit.version>
     </properties>
 </project>

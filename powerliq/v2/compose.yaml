@@ -1,0 +1,44 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: powerliq
+      POSTGRES_PASSWORD: powerliq-local
+    ports:
+      - "5432:5432"
+    volumes:
+      - powerliq-v2-postgres:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U powerliq -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  localstack:
+    image: localstack/localstack:4.0.3
+    environment:
+      SERVICES: kinesis,sqs
+      AWS_DEFAULT_REGION: eu-west-2
+      KINESIS_PROVIDER: kinesis-mock
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./infra/localstack/init/ready.d:/etc/localstack/init/ready.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+volumes:
+  powerliq-v2-postgres:
