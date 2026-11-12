@@ -1,0 +1,2 @@
+package com.powerliq.valuation;import com.powerliq.api.contracts.ErrorDescriptor;
+public enum ValuationErrorCode implements ErrorDescriptor{VALUATION_INVALID(400,false),IDEMPOTENCY_KEY_REQUIRED(400,false),IDEMPOTENCY_CONFLICT(409,false),VALUATION_NOT_FOUND(404,false),MARKET_DATA_INCOMPLETE(422,false),VALUATION_PERSISTENCE_FAILED(503,true);private final int s;private final boolean r;ValuationErrorCode(int s,boolean r){this.s=s;this.r=r;}public String code(){return name();}public int httpStatus(){return s;}public boolean retryable(){return r;}}
