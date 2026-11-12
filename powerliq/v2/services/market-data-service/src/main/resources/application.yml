@@ -1,0 +1,18 @@
+spring:
+  application.name: market-data-service
+  datasource:
+    url: ${MARKET_DATA_DB_URL:jdbc:postgresql://localhost:5436/market_data_db}
+    username: ${MARKET_DATA_DB_USER:powerliq}
+    password: ${MARKET_DATA_DB_PASSWORD:powerliq-local}
+    hikari:
+      maximum-pool-size: ${MARKET_DATA_DB_POOL_MAX:12}
+      connection-timeout: 2000
+server:
+  port: ${MARKET_DATA_HTTP_PORT:8084}
+  shutdown: graceful
+  tomcat:
+    threads.max: 50
+    accept-count: 50
+management:
+  endpoints.web.exposure.include: health,info,metrics,prometheus
+  endpoint.health.probes.enabled: true
