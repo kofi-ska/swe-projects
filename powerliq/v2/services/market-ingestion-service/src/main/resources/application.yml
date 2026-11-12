@@ -1,4 +1,5 @@
 spring:
+  config.import: optional:file:.env[.properties]
   application.name: market-ingestion-service
   datasource:
     url: ${INGESTION_DB_URL:jdbc:postgresql://localhost:5435/ingestion_db}
@@ -6,13 +7,17 @@ spring:
     password: ${INGESTION_DB_PASSWORD:powerliq-local}
     hikari:
       maximum-pool-size: ${INGESTION_DB_POOL_MAX:8}
-      connection-timeout: 2000
+      minimum-idle: ${INGESTION_DB_POOL_MIN:1}
+      connection-timeout: ${INGESTION_DB_CONNECTION_TIMEOUT_MS:2000}
+      validation-timeout: ${INGESTION_DB_VALIDATION_TIMEOUT_MS:1000}
 server:
   port: ${INGESTION_HTTP_PORT:8083}
   shutdown: graceful
   tomcat:
-    threads.max: 30
-    accept-count: 30
+    threads.max: ${INGESTION_HTTP_THREADS_MAX:30}
+    threads.min-spare: ${INGESTION_HTTP_THREADS_MIN:3}
+    accept-count: ${INGESTION_HTTP_ACCEPT_COUNT:30}
+    connection-timeout: ${POWERLIQ_HTTP_CONNECTION_TIMEOUT:3s}
 management:
   endpoints.web.exposure.include: health,info,metrics,prometheus
   endpoint.health.probes.enabled: true
@@ -20,7 +25,15 @@ powerliq:
   security.enabled: ${POWERLIQ_SECURITY_ENABLED:false}
   events:
     publisher.enabled: ${POWERLIQ_EVENTS_ENABLED:false}
+    publisher-delay: ${POWERLIQ_EVENT_PUBLISH_DELAY_MS:1000}
+    publisher-batch-size: ${POWERLIQ_EVENT_PUBLISH_BATCH_SIZE:10}
+    max-attempts: ${POWERLIQ_EVENT_MAX_ATTEMPTS:10}
     table: market_price_events
+  ingestion:
+    cron: ${INGESTION_CRON:0 2,32 * * * *}
+    max-backfill-days: ${INGESTION_MAX_BACKFILL_DAYS:31}
+    db-retry-attempts: ${INGESTION_DB_RETRY_ATTEMPTS:3}
+    db-retry-base-delay-ms: ${INGESTION_DB_RETRY_BASE_DELAY_MS:25}
   elexon:
     base-url: ${ELEXON_BASE_URL:https://data.elexon.co.uk/bmrs/api/v1}
     request-timeout: ${ELEXON_REQUEST_TIMEOUT:10s}

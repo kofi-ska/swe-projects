@@ -1,4 +1,5 @@
 spring:
+  config.import: optional:file:.env[.properties]
   application.name: market-data-service
   datasource:
     url: ${MARKET_DATA_DB_URL:jdbc:postgresql://localhost:5436/market_data_db}
@@ -6,15 +7,24 @@ spring:
     password: ${MARKET_DATA_DB_PASSWORD:powerliq-local}
     hikari:
       maximum-pool-size: ${MARKET_DATA_DB_POOL_MAX:12}
-      connection-timeout: 2000
+      minimum-idle: ${MARKET_DATA_DB_POOL_MIN:1}
+      connection-timeout: ${MARKET_DATA_DB_CONNECTION_TIMEOUT_MS:2000}
+      validation-timeout: ${MARKET_DATA_DB_VALIDATION_TIMEOUT_MS:1000}
 server:
   port: ${MARKET_DATA_HTTP_PORT:8084}
   shutdown: graceful
   tomcat:
-    threads.max: 50
-    accept-count: 50
+    threads.max: ${MARKET_DATA_HTTP_THREADS_MAX:50}
+    threads.min-spare: ${MARKET_DATA_HTTP_THREADS_MIN:5}
+    accept-count: ${MARKET_DATA_HTTP_ACCEPT_COUNT:50}
+    connection-timeout: ${POWERLIQ_HTTP_CONNECTION_TIMEOUT:3s}
 management:
   endpoints.web.exposure.include: health,info,metrics,prometheus
   endpoint.health.probes.enabled: true
 powerliq.security.enabled: ${POWERLIQ_SECURITY_ENABLED:false}
-powerliq.events.consumer.enabled: ${POWERLIQ_EVENTS_ENABLED:false}
+powerliq.events:
+  consumer.enabled: ${POWERLIQ_EVENTS_ENABLED:false}
+  consumer-delay: ${POWERLIQ_EVENT_CONSUMER_DELAY_MS:1000}
+  consumer-batch-size: ${POWERLIQ_EVENT_CONSUMER_BATCH_SIZE:10}
+  wait-seconds: ${POWERLIQ_EVENT_WAIT_SECONDS:10}
+  visibility-seconds: ${POWERLIQ_EVENT_VISIBILITY_SECONDS:30}

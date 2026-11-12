@@ -8,3 +8,6 @@ target/
 *.tfstate
 *.tfstate.*
 crash.log
+.env
+.env.*
+!.env.example

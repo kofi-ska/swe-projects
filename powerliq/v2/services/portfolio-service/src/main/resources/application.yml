@@ -1,4 +1,5 @@
 spring:
+  config.import: optional:file:.env[.properties]
   application.name: portfolio-service
   datasource:
     url: ${PORTFOLIO_DB_URL:jdbc:postgresql://localhost:5434/portfolio_db}
@@ -6,15 +7,23 @@ spring:
     password: ${PORTFOLIO_DB_PASSWORD:powerliq-local}
     hikari:
       maximum-pool-size: ${PORTFOLIO_DB_POOL_MAX:10}
-      connection-timeout: 2000
+      minimum-idle: ${PORTFOLIO_DB_POOL_MIN:1}
+      connection-timeout: ${PORTFOLIO_DB_CONNECTION_TIMEOUT_MS:2000}
+      validation-timeout: ${PORTFOLIO_DB_VALIDATION_TIMEOUT_MS:1000}
 server:
   port: ${PORTFOLIO_HTTP_PORT:8082}
   shutdown: graceful
   tomcat:
-    threads.max: 50
-    accept-count: 50
+    threads.max: ${PORTFOLIO_HTTP_THREADS_MAX:50}
+    threads.min-spare: ${PORTFOLIO_HTTP_THREADS_MIN:5}
+    accept-count: ${PORTFOLIO_HTTP_ACCEPT_COUNT:50}
+    connection-timeout: ${POWERLIQ_HTTP_CONNECTION_TIMEOUT:3s}
 management:
   endpoints.web.exposure.include: health,info,metrics,prometheus
   endpoint.health.probes.enabled: true
 powerliq.security.enabled: ${POWERLIQ_SECURITY_ENABLED:false}
-powerliq.events.publisher.enabled: ${POWERLIQ_EVENTS_ENABLED:false}
+powerliq.events:
+  publisher.enabled: ${POWERLIQ_EVENTS_ENABLED:false}
+  publisher-delay: ${POWERLIQ_EVENT_PUBLISH_DELAY_MS:1000}
+  publisher-batch-size: ${POWERLIQ_EVENT_PUBLISH_BATCH_SIZE:10}
+  max-attempts: ${POWERLIQ_EVENT_MAX_ATTEMPTS:10}

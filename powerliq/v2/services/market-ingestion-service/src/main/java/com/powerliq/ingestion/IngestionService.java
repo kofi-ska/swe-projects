@@ -16,13 +16,13 @@ import java.util.concurrent.CancellationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.TransientDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
 public class IngestionService {
- private static final Duration MAX_BACKFILL = Duration.ofDays(31);
- private final JdbcTemplate jdbc; private final ElexonClient source; private final ObjectMapper json; private final Clock clock;
- public IngestionService(JdbcTemplate jdbc,ElexonClient source,ObjectMapper json,Clock clock){this.jdbc=jdbc;this.source=source;this.json=json;this.clock=clock;}
+ private final JdbcTemplate jdbc; private final ElexonClient source; private final ObjectMapper json; private final Clock clock;private final Duration maxBackfill;private final int dbRetryAttempts;private final long dbRetryBaseDelayMs;
+ public IngestionService(JdbcTemplate jdbc,ElexonClient source,ObjectMapper json,Clock clock,@Value("${powerliq.ingestion.max-backfill-days:31}")long maxBackfillDays,@Value("${powerliq.ingestion.db-retry-attempts:3}")int dbRetryAttempts,@Value("${powerliq.ingestion.db-retry-base-delay-ms:25}")long dbRetryBaseDelayMs){if(maxBackfillDays<1||maxBackfillDays>366||dbRetryAttempts<1||dbRetryAttempts>10||dbRetryBaseDelayMs<1||dbRetryBaseDelayMs>10000)throw new IllegalArgumentException("Ingestion operational bounds are invalid");this.jdbc=jdbc;this.source=source;this.json=json;this.clock=clock;this.maxBackfill=Duration.ofDays(maxBackfillDays);this.dbRetryAttempts=dbRetryAttempts;this.dbRetryBaseDelayMs=dbRetryBaseDelayMs;}
 
  public IngestionRun run(IngestionRun.Type type, Instant from, Instant to, UUID correlationId) {
   validate(type,from,to); UUID id=UUID.randomUUID(); Instant started=Instant.now(clock);
@@ -63,7 +63,7 @@ public class IngestionService {
  private void finish(UUID id,String status,long read,long written,String code,String message){db(()->jdbc.update("UPDATE ingestion_runs SET status=?,finished_at=?,records_read=?,events_written=?,error_code=?,error_message=? WHERE id=?",status,Timestamp.from(Instant.now(clock)),read,written,code,message,id));}
  private void fail(UUID id,String code,Exception e){finish(id,"FAILED",0,0,code,truncate(e.getMessage()));}
  private String truncate(String s){if(s==null)return null;return s.length()>500?s.substring(0,500):s;}
- private void validate(IngestionRun.Type type,Instant from,Instant to){if(from==null||to==null||!from.isBefore(to)||to.isAfter(Instant.now(clock).plus(1,ChronoUnit.MINUTES))||(type==IngestionRun.Type.BACKFILL&&Duration.between(from,to).compareTo(MAX_BACKFILL)>0))throw new ServiceException(IngestionErrorCode.INGESTION_INVALID_RANGE,"Range must be ordered, not in the future, and backfills must not exceed 31 days");}
- private int db(DbCall call){for(int attempt=1;;attempt++){try{return call.run();}catch(TransientDataAccessException e){if(attempt==3)throw e;try{Thread.sleep(25L*attempt);}catch(InterruptedException x){Thread.currentThread().interrupt();throw e;}}catch(Exception e){if(e instanceof RuntimeException r)throw r;throw new IllegalStateException(e);}}}
+ private void validate(IngestionRun.Type type,Instant from,Instant to){if(from==null||to==null||!from.isBefore(to)||to.isAfter(Instant.now(clock).plus(1,ChronoUnit.MINUTES))||(type==IngestionRun.Type.BACKFILL&&Duration.between(from,to).compareTo(maxBackfill)>0))throw new ServiceException(IngestionErrorCode.INGESTION_INVALID_RANGE,"Range must be ordered, not in the future, and within the configured backfill limit");}
+ private int db(DbCall call){for(int attempt=1;;attempt++){try{return call.run();}catch(TransientDataAccessException e){if(attempt==dbRetryAttempts)throw e;try{Thread.sleep(dbRetryBaseDelayMs*attempt);}catch(InterruptedException x){Thread.currentThread().interrupt();throw e;}}catch(Exception e){if(e instanceof RuntimeException r)throw r;throw new IllegalStateException(e);}}}
  @FunctionalInterface private interface DbCall{int run()throws Exception;}
 }
