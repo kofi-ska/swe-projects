@@ -2,7 +2,7 @@ spring:
   config.import: optional:file:.env[.properties]
   application.name: valuation-service
   datasource:
-    url: ${VALUATION_DB_URL:jdbc:postgresql://localhost:5437/valuation_db}
+    url: ${VALUATION_DB_URL:jdbc:postgresql://localhost:5432/powerliq_valuation}
     username: ${VALUATION_DB_USER:powerliq}
     password: ${VALUATION_DB_PASSWORD:powerliq-local}
     hikari:

@@ -3,7 +3,7 @@ spring:
   application:
     name: position-service
   datasource:
-    url: ${POSITION_DB_URL:jdbc:postgresql://localhost:5433/position_db}
+    url: ${POSITION_DB_URL:jdbc:postgresql://localhost:5432/powerliq_position}
     username: ${POSITION_DB_USER:powerliq}
     password: ${POSITION_DB_PASSWORD:powerliq-local}
     hikari:
@@ -39,6 +39,8 @@ management:
       show-details: never
 powerliq.security.enabled: ${POWERLIQ_SECURITY_ENABLED:false}
 powerliq.events:
+  endpoint: ${POWERLIQ_AWS_ENDPOINT:}
+  bus-name: ${POWERLIQ_EVENT_BUS_NAME:powerliq-local}
   publisher.enabled: ${POWERLIQ_EVENTS_ENABLED:false}
   publisher-delay: ${POWERLIQ_EVENT_PUBLISH_DELAY_MS:1000}
   publisher-batch-size: ${POWERLIQ_EVENT_PUBLISH_BATCH_SIZE:10}

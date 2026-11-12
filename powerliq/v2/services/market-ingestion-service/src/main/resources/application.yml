@@ -2,7 +2,7 @@ spring:
   config.import: optional:file:.env[.properties]
   application.name: market-ingestion-service
   datasource:
-    url: ${INGESTION_DB_URL:jdbc:postgresql://localhost:5435/ingestion_db}
+    url: ${INGESTION_DB_URL:jdbc:postgresql://localhost:5432/powerliq_ingestion}
     username: ${INGESTION_DB_USER:powerliq}
     password: ${INGESTION_DB_PASSWORD:powerliq-local}
     hikari:
@@ -24,6 +24,8 @@ management:
 powerliq:
   security.enabled: ${POWERLIQ_SECURITY_ENABLED:false}
   events:
+    endpoint: ${POWERLIQ_AWS_ENDPOINT:}
+    bus-name: ${POWERLIQ_EVENT_BUS_NAME:powerliq-local}
     publisher.enabled: ${POWERLIQ_EVENTS_ENABLED:false}
     publisher-delay: ${POWERLIQ_EVENT_PUBLISH_DELAY_MS:1000}
     publisher-batch-size: ${POWERLIQ_EVENT_PUBLISH_BATCH_SIZE:10}

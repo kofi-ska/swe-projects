@@ -23,9 +23,8 @@ services:
   localstack:
     image: localstack/localstack:4.0.3
     environment:
-      SERVICES: kinesis,sqs
+      SERVICES: events,sqs
       AWS_DEFAULT_REGION: eu-west-2
-      KINESIS_PROVIDER: kinesis-mock
     ports:
       - "${LOCALSTACK_PORT:-4566}:4566"
     volumes:
@@ -39,6 +38,74 @@ services:
       resources:
         limits:
           memory: ${LOCALSTACK_MEMORY_LIMIT:-1g}
+
+  position-service:
+    profiles: ["operational"]
+    build:
+      context: .
+      args:
+        SERVICE: position-service
+    environment:
+      POSITION_HTTP_PORT: 8080
+      POSITION_DB_URL: jdbc:postgresql://postgres:5432/powerliq_position
+      POSITION_DB_USER: ${POSTGRES_USER:-powerliq}
+      POSITION_DB_PASSWORD: ${POSTGRES_PASSWORD:-powerliq-local}
+      POWERLIQ_SECURITY_ENABLED: "false"
+      POWERLIQ_EVENTS_ENABLED: "true"
+      POWERLIQ_EVENT_BUS_NAME: powerliq-local
+      POWERLIQ_AWS_ENDPOINT: http://localstack:4566
+      POWERLIQ_AWS_REGION: eu-west-2
+    ports:
+      - "${POSITION_EXPOSE_PORT:-8081}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/actuator/health/readiness || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: ${POSITION_MEMORY_LIMIT:-512m}
+
+  market-data-service:
+    profiles: ["operational"]
+    build:
+      context: .
+      args:
+        SERVICE: market-data-service
+    environment:
+      MARKET_DATA_HTTP_PORT: 8080
+      MARKET_DATA_DB_URL: jdbc:postgresql://postgres:5432/powerliq_market_data
+      MARKET_DATA_DB_USER: ${POSTGRES_USER:-powerliq}
+      MARKET_DATA_DB_PASSWORD: ${POSTGRES_PASSWORD:-powerliq-local}
+      POWERLIQ_SECURITY_ENABLED: "false"
+      POWERLIQ_EVENTS_ENABLED: "true"
+      POWERLIQ_MARKET_PRICE_QUEUE_URL: http://localstack:4566/000000000000/powerliq-market-price
+      POWERLIQ_AWS_ENDPOINT: http://localstack:4566
+      POWERLIQ_AWS_REGION: eu-west-2
+      POWERLIQ_EVENT_CONSUMER_DELAY_MS: 250
+      POWERLIQ_EVENT_WAIT_SECONDS: 1
+    ports:
+      - "${MARKET_DATA_EXPOSE_PORT:-8084}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/actuator/health/readiness || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: ${MARKET_DATA_MEMORY_LIMIT:-512m}
 
 volumes:
   powerliq-v2-postgres:

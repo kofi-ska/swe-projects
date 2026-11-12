@@ -1,38 +1,50 @@
 # PowerLiq V2
 
-PowerLiq V2 is the distributed, event-driven evolution of PowerLiq. AI is outside its scope.
+PowerLiq V2 is a Java 21, distributed, event-driven electricity position and liquidity system. AI is intentionally outside its scope.
 
-The V2 foundation establishes a Maven reactor, extracts the deterministic V1 financial engine into a framework-independent library, defines versioned event contracts and creates independently buildable service boundaries. Business behavior will be added incrementally rather than copied from the V1 monolith.
+## Implemented services
 
-## Modules
+- `position-service`: idempotent position creation, guarded settlement and transactional outbox.
+- `portfolio-service`: cash and liquidity-buffer ownership with optimistic concurrency and transactional outbox.
+- `market-ingestion-service`: UTC half-hour schedule, bounded historical backfills, durable run history, cancellation, deduplication and transient database retry.
+- `market-data-service`: immutable price revisions, latest-price projection and idempotent EventBridge/SQS consumption.
+- `valuation-service`: deterministic portfolio valuation, collateral/liquidity calculation and idempotent persisted results.
 
-- `libraries/financial-core`: value types, settlement-interval rules, valuation, collateral, liquidity and scenario calculations.
-- `contracts/event-contracts`: versioned, transport-neutral domain-event contracts.
-- `services/position-service`: position lifecycle owner.
-- `services/portfolio-service`: portfolio cash and liquidity-setting owner.
-- `services/market-ingestion-service`: scheduled ingestion and backfill owner.
-- `services/market-data-service`: normalized price and revision owner.
-- `services/valuation-service`: liquidity projection and scenario owner.
-- `tests/architecture`: automated peer-service dependency restrictions.
+Each service is an independently buildable Spring Boot application with its own schema boundary. Shared modules contain transport-neutral contracts, deterministic financial logic, error contracts, OAuth2 resource-server policy and the outbox publisher. Architecture tests prohibit peer-service imports.
 
-## Build
+## Reliability and security
 
-Java 21 is required.
+- PostgreSQL transactions atomically commit aggregates and outbox records.
+- EventBridge and SQS provide at-least-once delivery; consumers deduplicate by event identity.
+- Every external operation has bounded pools, timeouts, batches or retry counts controlled through environment variables.
+- `/api/v2/**` uses Cognito-compatible JWT scopes in production; only health probes are anonymous.
+- Errors use a sanitized shared envelope with stable service-specific codes and correlation IDs.
+- CloudWatch receives bounded-retention logs, ECS/RDS/SQS metrics, a dashboard and SNS-backed alarms.
+
+## Build and test
+
+Java 21 and Docker are required.
 
 ```shell
 ./mvnw test
+docker compose --env-file .env.example config --quiet
+terraform -chdir=infra/terraform validate
 ```
 
-## Local infrastructure
-
-Docker Compose provides bounded local-only infrastructure:
-
-- One PostgreSQL container with a logically separate database for each service.
-- LocalStack emulation for a two-shard Kinesis stream plus bounded retry and dead-letter queues.
+For local infrastructure, copy `.env.example` to an untracked `.env`, replace every `change-me` value, then run:
 
 ```shell
 docker compose up -d --wait
 docker compose down
 ```
 
-These resources support development and tests only. Production AWS resources will be owned by Terraform under `deploy/v2`.
+The optional operational profile builds Position and Market Data as independent containers and exercises real PostgreSQL and LocalStack EventBridge/SQS infrastructure:
+
+```shell
+docker compose --profile operational up -d --build --wait
+POWERLIQ_LOAD_REQUESTS=500 POWERLIQ_LOAD_CONCURRENCY=20 ./tests/operational/load-position.sh
+./tests/operational/verify-event-recovery.sh
+docker compose --profile operational down
+```
+
+See [Operational verification](docs/operational-verification.md), [Capacity and economics](docs/capacity-and-economics.md), and the [AWS sandbox guide](infra/terraform/README.md). Production secrets belong in AWS Secrets Manager, never `.env` or Terraform variables.

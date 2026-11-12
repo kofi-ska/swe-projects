@@ -2,7 +2,7 @@ spring:
   config.import: optional:file:.env[.properties]
   application.name: portfolio-service
   datasource:
-    url: ${PORTFOLIO_DB_URL:jdbc:postgresql://localhost:5434/portfolio_db}
+    url: ${PORTFOLIO_DB_URL:jdbc:postgresql://localhost:5432/powerliq_portfolio}
     username: ${PORTFOLIO_DB_USER:powerliq}
     password: ${PORTFOLIO_DB_PASSWORD:powerliq-local}
     hikari:
@@ -23,6 +23,8 @@ management:
   endpoint.health.probes.enabled: true
 powerliq.security.enabled: ${POWERLIQ_SECURITY_ENABLED:false}
 powerliq.events:
+  endpoint: ${POWERLIQ_AWS_ENDPOINT:}
+  bus-name: ${POWERLIQ_EVENT_BUS_NAME:powerliq-local}
   publisher.enabled: ${POWERLIQ_EVENTS_ENABLED:false}
   publisher-delay: ${POWERLIQ_EVENT_PUBLISH_DELAY_MS:1000}
   publisher-batch-size: ${POWERLIQ_EVENT_PUBLISH_BATCH_SIZE:10}
