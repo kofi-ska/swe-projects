@@ -1,0 +1,47 @@
+spring:
+  application:
+    name: powerliq-v1
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/powerliq}
+    username: ${SPRING_DATASOURCE_USERNAME:powerliq}
+    password: ${SPRING_DATASOURCE_PASSWORD:powerliq}
+    hikari:
+      maximum-pool-size: ${SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE:10}
+      connection-timeout: ${SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT:3000}
+  flyway:
+    clean-disabled: true
+    validate-on-migrate: true
+  lifecycle:
+    timeout-per-shutdown-phase: ${SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE:30s}
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: ${SERVER_SHUTDOWN:graceful}
+
+management:
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: ${MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE:health,info,metrics}
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+
+powerliq:
+  portfolio:
+    id: ${POWERLIQ_PORTFOLIO_ID:10000000-0000-0000-0000-000000000001}
+    available-cash-gbp: ${POWERLIQ_PORTFOLIO_AVAILABLE_CASH_GBP:250000.00}
+    liquidity-buffer-gbp: ${POWERLIQ_PORTFOLIO_LIQUIDITY_BUFFER_GBP:100000.00}
+  elexon:
+    base-url: ${POWERLIQ_ELEXON_BASE_URL:https://data.elexon.co.uk/bmrs/api/v1}
+    connect-timeout: ${POWERLIQ_ELEXON_CONNECT_TIMEOUT:3s}
+    read-timeout: ${POWERLIQ_ELEXON_READ_TIMEOUT:10s}
+    max-response-bytes: ${POWERLIQ_ELEXON_MAX_RESPONSE_BYTES:5242880}
+  market-data:
+    max-age: ${POWERLIQ_MARKET_DATA_MAX_AGE:90m}
+  security:
+    admin-key: ${POWERLIQ_ADMIN_KEY:local-dev-key}
