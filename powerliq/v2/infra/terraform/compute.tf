@@ -22,6 +22,13 @@ resource "aws_iam_role" "task" {
   name_prefix        = "powerliq-task-"
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "ecs-tasks.amazonaws.com" }, Action = "sts:AssumeRole" }] })
 }
+resource "aws_iam_role_policy" "task_events" {
+  role = aws_iam_role.task.id
+  policy = jsonencode({ Version = "2012-10-17", Statement = [
+    { Effect = "Allow", Action = ["events:PutEvents"], Resource = aws_cloudwatch_event_bus.domain.arn },
+    { Effect = "Allow", Action = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility", "sqs:GetQueueAttributes"], Resource = aws_sqs_queue.market_price.arn }
+  ] })
+}
 resource "aws_cloudwatch_log_group" "service" {
   for_each          = local.services
   name              = "/powerliq/${var.environment}/${each.key}"
@@ -42,7 +49,7 @@ resource "aws_ecs_task_definition" "service" {
   memory                   = "512"
   execution_role_arn       = aws_iam_role.task_execution.arn
   task_role_arn            = aws_iam_role.task.arn
-  container_definitions    = jsonencode([{ name = each.key, image = "${aws_ecr_repository.service[each.key].repository_url}:${var.image_tag}", essential = true, cpu = 128, memory = 512, readonlyRootFilesystem = true, portMappings = [{ containerPort = 8080, hostPort = 0, protocol = "tcp" }], environment = [{ name = each.value.port_env, value = "8080" }, { name = each.value.db_url_env, value = "jdbc:postgresql://${aws_db_instance.this.address}:5432/powerliq?currentSchema=${each.value.db_schema}" }, { name = each.value.db_user_env, value = aws_db_instance.this.username }, { name = "SPRING_FLYWAY_SCHEMAS", value = each.value.db_schema }, { name = "SPRING_FLYWAY_CREATE_SCHEMAS", value = "true" }, { name = "SPRING_PROFILES_ACTIVE", value = "prod" }, { name = "POWERLIQ_JWT_ISSUER_URI", value = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.this.id}" }], secrets = [{ name = each.value.db_password_env, valueFrom = aws_secretsmanager_secret.db.arn }], healthCheck = { command = ["CMD-SHELL", "wget -q -O - http://localhost:8080/actuator/health/readiness || exit 1"], interval = 30, timeout = 5, retries = 3, startPeriod = 60 }, logConfiguration = { logDriver = "awslogs", options = { "awslogs-group" = aws_cloudwatch_log_group.service[each.key].name, "awslogs-region" = var.aws_region, "awslogs-stream-prefix" = "service" } } }])
+  container_definitions    = jsonencode([{ name = each.key, image = "${aws_ecr_repository.service[each.key].repository_url}:${var.image_tag}", essential = true, cpu = 128, memory = 512, readonlyRootFilesystem = true, portMappings = [{ containerPort = 8080, hostPort = 0, protocol = "tcp" }], environment = [{ name = each.value.port_env, value = "8080" }, { name = each.value.db_url_env, value = "jdbc:postgresql://${aws_db_instance.this.address}:5432/powerliq?currentSchema=${each.value.db_schema}" }, { name = each.value.db_user_env, value = aws_db_instance.this.username }, { name = "SPRING_FLYWAY_SCHEMAS", value = each.value.db_schema }, { name = "SPRING_FLYWAY_CREATE_SCHEMAS", value = "true" }, { name = "SPRING_PROFILES_ACTIVE", value = "prod" }, { name = "POWERLIQ_JWT_ISSUER_URI", value = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.this.id}" }, { name = "POWERLIQ_EVENT_BUS_NAME", value = aws_cloudwatch_event_bus.domain.name }, { name = "POWERLIQ_MARKET_PRICE_QUEUE_URL", value = aws_sqs_queue.market_price.id }, { name = "POWERLIQ_AWS_REGION", value = var.aws_region }], secrets = [{ name = each.value.db_password_env, valueFrom = aws_secretsmanager_secret.db.arn }], healthCheck = { command = ["CMD-SHELL", "wget -q -O - http://localhost:8080/actuator/health/readiness || exit 1"], interval = 30, timeout = 5, retries = 3, startPeriod = 60 }, logConfiguration = { logDriver = "awslogs", options = { "awslogs-group" = aws_cloudwatch_log_group.service[each.key].name, "awslogs-region" = var.aws_region, "awslogs-stream-prefix" = "service" } } }])
 }
 resource "aws_lb_target_group" "service" {
   for_each             = local.services

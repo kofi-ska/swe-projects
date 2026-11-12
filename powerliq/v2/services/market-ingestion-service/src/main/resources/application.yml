@@ -18,6 +18,9 @@ management:
   endpoint.health.probes.enabled: true
 powerliq:
   security.enabled: ${POWERLIQ_SECURITY_ENABLED:false}
+  events:
+    publisher.enabled: ${POWERLIQ_EVENTS_ENABLED:false}
+    table: market_price_events
   elexon:
     base-url: ${ELEXON_BASE_URL:https://data.elexon.co.uk/bmrs/api/v1}
     request-timeout: ${ELEXON_REQUEST_TIMEOUT:10s}

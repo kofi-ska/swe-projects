@@ -1,2 +1,6 @@
 powerliq.security.enabled: true
 spring.security.oauth2.resourceserver.jwt.issuer-uri: ${POWERLIQ_JWT_ISSUER_URI}
+powerliq.events:
+  publisher.enabled: true
+  bus-name: ${POWERLIQ_EVENT_BUS_NAME}
+  table: market_price_events

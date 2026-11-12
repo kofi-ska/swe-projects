@@ -34,3 +34,4 @@ management:
         enabled: true
       show-details: never
 powerliq.security.enabled: ${POWERLIQ_SECURITY_ENABLED:false}
+powerliq.events.publisher.enabled: ${POWERLIQ_EVENTS_ENABLED:false}
