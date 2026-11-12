@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: powerliq
+      POSTGRES_USER: powerliq
+      POSTGRES_PASSWORD: powerliq
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U powerliq -d powerliq"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    volumes:
+      - powerliq-postgres:/var/lib/postgresql/data
+
+volumes:
+  powerliq-postgres:

@@ -1,0 +1,27 @@
+groups:
+  - name: llm-gateway-slo
+    rules:
+      - alert: GatewayFastErrorBudgetBurn
+        expr: (1 - sum(rate(llm_gateway_requests_total{outcome="success"}[1h])) / sum(rate(llm_gateway_requests_total{outcome=~"success|overloaded|timeout|internal_error"}[1h]))) > 0.0144
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: Gateway availability budget is burning quickly
+          description: Users are receiving server-controlled failures. Check outcome rates, queue saturation, and traces.
+          dashboard: /d/llm-slo
+          runbook: runbooks/high-error-rate.md
+      - alert: GatewaySlowErrorBudgetBurn
+        expr: (1 - sum(rate(llm_gateway_requests_total{outcome="success"}[6h])) / sum(rate(llm_gateway_requests_total{outcome=~"success|overloaded|timeout|internal_error"}[6h]))) > 0.006
+        for: 30m
+        labels: {severity: warning}
+        annotations: {summary: Gateway availability budget is steadily burning, runbook: runbooks/high-error-rate.md}
+      - alert: GatewayQueueSaturated
+        expr: llm_gateway_queue_depth / llm_gateway_queue_capacity > 0.8
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: Gateway queue is over 80 percent full, runbook: runbooks/queue-saturation.md}
+      - alert: GatewayTTFTTooHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(llm_gateway_time_to_first_token_seconds_bucket[5m]))) > 0.3
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: Time to first token p95 exceeds 300ms, runbook: runbooks/high-latency.md}
