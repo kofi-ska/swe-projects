@@ -16,3 +16,4 @@ server:
 management:
   endpoints.web.exposure.include: health,info,metrics,prometheus
   endpoint.health.probes.enabled: true
+powerliq.security.enabled: ${POWERLIQ_SECURITY_ENABLED:false}

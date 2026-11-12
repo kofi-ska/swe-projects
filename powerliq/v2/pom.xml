@@ -20,6 +20,7 @@
     <modules>
         <module>contracts/event-contracts</module>
         <module>libraries/api-contracts</module>
+        <module>libraries/service-security</module>
         <module>libraries/financial-core</module>
         <module>services/position-service</module>
         <module>services/portfolio-service</module>

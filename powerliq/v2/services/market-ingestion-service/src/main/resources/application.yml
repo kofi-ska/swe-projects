@@ -17,6 +17,7 @@ management:
   endpoints.web.exposure.include: health,info,metrics,prometheus
   endpoint.health.probes.enabled: true
 powerliq:
+  security.enabled: ${POWERLIQ_SECURITY_ENABLED:false}
   elexon:
     base-url: ${ELEXON_BASE_URL:https://data.elexon.co.uk/bmrs/api/v1}
     request-timeout: ${ELEXON_REQUEST_TIMEOUT:10s}

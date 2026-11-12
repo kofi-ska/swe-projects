@@ -13,6 +13,7 @@
     <name>PowerLiq V2 Market Data Service</name>
     <dependencies>
         <dependency><groupId>com.powerliq</groupId><artifactId>api-contracts</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>com.powerliq</groupId><artifactId>service-security</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>com.powerliq</groupId><artifactId>event-contracts</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-validation</artifactId></dependency>
