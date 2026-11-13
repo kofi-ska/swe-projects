@@ -1,0 +1,47 @@
+spring:
+  config.import: optional:file:.env[.properties]
+  application:
+    name: position-service
+  datasource:
+    url: ${POSITION_DB_URL:jdbc:postgresql://localhost:5432/powerliq_position}
+    username: ${POSITION_DB_USER:powerliq}
+    password: ${POSITION_DB_PASSWORD:powerliq-local}
+    hikari:
+      maximum-pool-size: ${POSITION_DB_POOL_MAX:10}
+      minimum-idle: ${POSITION_DB_POOL_MIN:1}
+      connection-timeout: ${POSITION_DB_CONNECTION_TIMEOUT_MS:2000}
+      validation-timeout: ${POSITION_DB_VALIDATION_TIMEOUT_MS:1000}
+      idle-timeout: ${POSITION_DB_IDLE_TIMEOUT_MS:600000}
+      max-lifetime: ${POSITION_DB_MAX_LIFETIME_MS:1800000}
+  flyway:
+    enabled: true
+  lifecycle:
+    timeout-per-shutdown-phase: ${POWERLIQ_SHUTDOWN_TIMEOUT:20s}
+server:
+  port: ${POSITION_HTTP_PORT:8081}
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: ${POSITION_HTTP_THREADS_MAX:50}
+      min-spare: ${POSITION_HTTP_THREADS_MIN:5}
+    accept-count: ${POSITION_HTTP_ACCEPT_COUNT:50}
+    connection-timeout: ${POWERLIQ_HTTP_CONNECTION_TIMEOUT:3s}
+    max-connections: ${POSITION_HTTP_MAX_CONNECTIONS:200}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+powerliq.security.enabled: ${POWERLIQ_SECURITY_ENABLED:false}
+powerliq.events:
+  endpoint: ${POWERLIQ_AWS_ENDPOINT:}
+  bus-name: ${POWERLIQ_EVENT_BUS_NAME:powerliq-local}
+  publisher.enabled: ${POWERLIQ_EVENTS_ENABLED:false}
+  publisher-delay: ${POWERLIQ_EVENT_PUBLISH_DELAY_MS:1000}
+  publisher-batch-size: ${POWERLIQ_EVENT_PUBLISH_BATCH_SIZE:10}
+  max-attempts: ${POWERLIQ_EVENT_MAX_ATTEMPTS:10}

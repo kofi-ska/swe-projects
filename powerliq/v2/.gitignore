@@ -1,0 +1,13 @@
+target/
+*.log
+.DS_Store
+.idea/
+*.iml
+.vscode/
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+.env
+.env.*
+!.env.example

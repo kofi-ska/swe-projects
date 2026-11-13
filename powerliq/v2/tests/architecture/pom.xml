@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.powerliq</groupId>
+        <artifactId>powerliq-v2</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+    <artifactId>architecture-tests</artifactId>
+    <name>PowerLiq V2 Architecture Tests</name>
+    <dependencies>
+        <dependency><groupId>com.powerliq</groupId><artifactId>position-service</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>com.powerliq</groupId><artifactId>portfolio-service</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>com.powerliq</groupId><artifactId>market-ingestion-service</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>com.powerliq</groupId><artifactId>market-data-service</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>com.powerliq</groupId><artifactId>valuation-service</artifactId><version>${project.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>com.tngtech.archunit</groupId><artifactId>archunit-junit5</artifactId><version>${archunit.version}</version><scope>test</scope></dependency>
+        <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,24 @@
+spring:
+  config.import: optional:file:.env[.properties]
+  application.name: valuation-service
+  datasource:
+    url: ${VALUATION_DB_URL:jdbc:postgresql://localhost:5432/powerliq_valuation}
+    username: ${VALUATION_DB_USER:powerliq}
+    password: ${VALUATION_DB_PASSWORD:powerliq-local}
+    hikari:
+      maximum-pool-size: ${VALUATION_DB_POOL_MAX:10}
+      minimum-idle: ${VALUATION_DB_POOL_MIN:1}
+      connection-timeout: ${VALUATION_DB_CONNECTION_TIMEOUT_MS:2000}
+      validation-timeout: ${VALUATION_DB_VALIDATION_TIMEOUT_MS:1000}
+server:
+  port: ${VALUATION_HTTP_PORT:8085}
+  shutdown: graceful
+  tomcat:
+    threads.max: ${VALUATION_HTTP_THREADS_MAX:40}
+    threads.min-spare: ${VALUATION_HTTP_THREADS_MIN:4}
+    accept-count: ${VALUATION_HTTP_ACCEPT_COUNT:40}
+    connection-timeout: ${POWERLIQ_HTTP_CONNECTION_TIMEOUT:3s}
+management:
+  endpoints.web.exposure.include: health,info,metrics,prometheus
+  endpoint.health.probes.enabled: true
+powerliq.security.enabled: ${POWERLIQ_SECURITY_ENABLED:false}
